@@ -1,0 +1,3 @@
+project SPARKlib extends "sparklib_internal" is
+   for Object_Dir use "sparklib_obj";
+end SPARKlib;

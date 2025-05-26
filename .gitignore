@@ -1,0 +1,9 @@
+/obj/
+/lib/
+/alire/
+/config/
+sparklib_obj
+CLAUDE.md
+sparklib_lib/
+share/
+perf.data

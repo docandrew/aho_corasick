@@ -1,0 +1,16 @@
+name = "tests"
+description = ""
+version = "0.1.0-dev"
+
+authors = ["docandrew"]
+maintainers = ["docandrew <19672868+docandrew@users.noreply.github.com>"]
+maintainers-logins = ["docandrew"]
+licenses = "MIT OR Apache-2.0 WITH LLVM-exception"
+website = ""
+tags = []
+
+[[depends-on]]
+aho_corasick = "*"
+
+[[pins]]
+aho_corasick = { path='..' }
