@@ -1,6 +1,6 @@
 -------------------------------------------------------------------------------
 --  aho_corasick.ads
--- 
+--
 --  Copyright (c) 2025, High Confidence / Jon Andrew
 --  All rights reserved.
 --
@@ -10,7 +10,6 @@
 --
 --  SPDX-License-Identifier: MIT
 -------------------------------------------------------------------------------
-with Interfaces; use Interfaces;
 with Ada.Strings.Text_Buffers;
 
 package Aho_Corasick with SPARK_Mode is
@@ -63,7 +62,7 @@ package Aho_Corasick with SPARK_Mode is
    type State_Output is record
       --  The patterns that matched at this state
       Matched_Patterns : Pattern_Index_Array (1 .. Max_Overlapping_Patterns) :=
-         (others => 0);
+         [others => 0];
 
       --  The number of patterns that matched at this state
       Count : Natural := 0;
@@ -116,7 +115,7 @@ package Aho_Corasick with SPARK_Mode is
    --  The automaton is initialized with the patterns provided and can then
    --  be used to find matches in a text.
    --  @param Initialized - Whether the automaton has been initialized
-   --  @param Overloaded - Whether either of the case-sensitive or 
+   --  @param Overloaded - Whether either of the case-sensitive or
    --   case-insitive automata have been overloaded. This can happen if the
    --   number of overlapping patterns ending at a state exceeds the maximum
    --   number. This should be checked before using the automaton. If True,

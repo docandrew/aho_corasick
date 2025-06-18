@@ -24,8 +24,8 @@ package body Aho_Corasick with SPARK_Mode is
    --  Ada 2022 integer literal to an Integer_Option.
    ----------------------------------------------------------------------------
    function From_Integer (S : String) return Integer_Option is
-      ((O => Just, Value => Integer'Value(S))) with SPARK_Mode;
-   
+      ((O => Just, Value => Integer'Value (S))) with SPARK_Mode;
+
    ----------------------------------------------------------------------------
    --  Integer_Option_Image
    --  Ada 2022 Integer_Option custom 'Image attribute.
@@ -154,7 +154,7 @@ package body Aho_Corasick with SPARK_Mode is
       Overloaded := False;
       for I in 1 .. Source.Count loop
          declare
-            Pattern_Index : Positive := Source.Matched_Patterns (I);
+            Pattern_Index : constant Positive := Source.Matched_Patterns (I);
             Found : Boolean := False;
          begin
             --  Check if the pattern is already in the destination state
@@ -195,64 +195,66 @@ package body Aho_Corasick with SPARK_Mode is
    begin
       --  Build trie for transitions, only for those patterns which match
       --  the specified case-sensitivity.
-     
+
       declare
          Initial_States : constant Natural := States with Ghost;
       begin
-      
-      for I in Patterns'Range loop
 
-         if Patterns (I).Nocase = Nocase then
-            declare
-               Current_State : State := Start_State;
-               Pattern : access constant String := Patterns (I).Pattern;
-               Overload : Boolean;
-            begin
-               --  Insert each character of the pattern into the trie
-               for C of Pattern.all loop
-                  --  Create new state if necessary. If this pattern is
-                  --  case-insensitive, normalize to lowercase.
-                  declare
-                     CN : Character :=
-                        (if Nocase = Case_Insensitive then
-                           To_Lower (C)
-                        else C);
-                  begin
-                     if T.Transitions (Current_State, CN) = No_State then
-                        States := States + 1;
-                        T.Transitions (Current_State, CN) := States;
-                     end if;
+         for I in Patterns'Range loop
 
-                     Current_State := T.Transitions (Current_State, CN);
-                  end;
-               end loop;
+            if Patterns (I).Nocase = Nocase then
+               declare
+                  Current_State : State := Start_State;
+                  Pattern : constant access constant String :=
+                     Patterns (I).Pattern;
+                  Overload : Boolean;
+               begin
+                  --  Insert each character of the pattern into the trie
+                  for C of Pattern.all loop
+                     --  Create new state if necessary. If this pattern is
+                     --  case-insensitive, normalize to lowercase.
+                     declare
+                        CN : constant Character :=
+                           (if Nocase = Case_Insensitive then
+                              To_Lower (C)
+                           else C);
+                     begin
+                        if T.Transitions (Current_State, CN) = No_State then
+                           States := States + 1;
+                           T.Transitions (Current_State, CN) := States;
+                        end if;
 
-               --  Add current word in output links  
-               Add_Pattern_to_State (T.Outputs (Current_State), I, Overload);
-               if Overload then
-                  T.Overloaded := True;
-               end if;
-            end;
-         end if;
-      end loop;
-      
-      --  Assert that States never decreases
-      pragma Assert (States >= Initial_States);
+                        Current_State := T.Transitions (Current_State, CN);
+                     end;
+                  end loop;
+
+                  --  Add current word in output links
+                  Add_Pattern_to_State (
+                     T.Outputs (Current_State), I, Overload);
+
+                  if Overload then
+                     T.Overloaded := True;
+                  end if;
+               end;
+            end if;
+         end loop;
+
+         pragma Assert (States >= Initial_States);
       end;
    end Build_Trie;
 
-   ------------------------------------------------------------------------------
+   ----------------------------------------------------------------------------
    --  Add_Default_Transitions
    --  This procedure adds default transitions from state 0 for characters
    --  that don't have explicit transitions.
-   ------------------------------------------------------------------------------
+   ----------------------------------------------------------------------------
    procedure Add_Default_Transitions (T : in out Simple_Automaton)
       with SPARK_Mode
    is
    begin
       --  Add edge from state 0 to all characters that don't have one already
       for C in Character'Range loop
-              
+
          --  Ensure transition is non-negative
          if T.Transitions (Start_State, C) = No_State then
             --  Loop back to start state
@@ -262,11 +264,11 @@ package body Aho_Corasick with SPARK_Mode is
       end loop;
    end Add_Default_Transitions;
 
-   ------------------------------------------------------------------------------
+   ----------------------------------------------------------------------------
    --  Build_Failure_Links
    --  This procedure builds the failure links using BFS (breadth-first search)
    --  algorithm for the Aho-Corasick automaton.
-   ------------------------------------------------------------------------------
+   ----------------------------------------------------------------------------
    procedure Build_Failure_Links (T      : in out Simple_Automaton;
                                   States : Natural)
       with SPARK_Mode, Always_Terminates
@@ -329,7 +331,7 @@ package body Aho_Corasick with SPARK_Mode is
                         if Target_State /= Failure_State then
                            declare
                               Local_Overloaded : Boolean;
-                              Failure_Output : constant State_Output := 
+                              Failure_Output : constant State_Output :=
                                  T.Outputs (Failure_State);
                            begin
                               Merge_Outputs (
@@ -353,12 +355,12 @@ package body Aho_Corasick with SPARK_Mode is
       end loop;
    end Build_Failure_Links;
 
-   ------------------------------------------------------------------------------
+   ----------------------------------------------------------------------------
    --  Build_Simple_Automaton
    --  This function builds the Aho-Corasick automaton from the given patterns.
    --  It constructs a trie for the patterns, adds failure links, and prepares
    --  the automaton for matching.
-   ------------------------------------------------------------------------------
+   ----------------------------------------------------------------------------
    function Build_Simple_Automaton (Patterns : Pattern_Array;
                                     Nocase   : Case_Sensitivity)
       return Simple_Automaton with SPARK_Mode
@@ -370,7 +372,7 @@ package body Aho_Corasick with SPARK_Mode is
          T.Transitions := [others => [others => No_State]];
          T.Failures := [others => No_State];
          T.Outputs := [others => <>];
-         
+
          Build_Trie (T, Patterns, Nocase, States);
          Add_Default_Transitions (T);
          Build_Failure_Links (T, States);
@@ -387,8 +389,10 @@ package body Aho_Corasick with SPARK_Mode is
    function Build_Automaton (Patterns : Pattern_Array) return Automaton
       with SPARK_Mode
    is
-      CS_States : Natural := Get_Max_States (Patterns, Case_Sensitive);
-      CI_States : Natural := Get_Max_States (Patterns, Case_Insensitive);
+      CS_States : constant Natural :=
+         Get_Max_States (Patterns, Case_Sensitive);
+      CI_States : constant Natural :=
+         Get_Max_States (Patterns, Case_Insensitive);
    begin
       return T : Automaton := (
          CS_States => CS_States,
@@ -398,7 +402,7 @@ package body Aho_Corasick with SPARK_Mode is
          others => <>)
       do
          T.Stream_Index := 0;
-         T.Overloaded := T.CS_Automaton.Overloaded or
+         T.Overloaded := T.CS_Automaton.Overloaded or else
                          T.CI_Automaton.Overloaded;
          T.Initialized := not T.Overloaded;
       end return;
@@ -426,7 +430,7 @@ package body Aho_Corasick with SPARK_Mode is
       return Boolean with SPARK_Mode
    is
    begin
-      --  Depth/Offset are used to limit matches relative to the stream position.
+      --  Depth/Offset are used to limit matches relative to stream position.
       --  Distance/Within are used to limit matches relative to the previous
       --  match position. Note that Start_Pos and End_Pos are already
       --  adjusted by the Stream_Index, so they are relative to the stream.
@@ -493,7 +497,7 @@ package body Aho_Corasick with SPARK_Mode is
       end if;
 
       --  Return the end position of the previous match
-      return Integer (Matches (Pattern_Index - 1).End_Position.Value);
+      return Matches (Pattern_Index - 1).End_Position.Value;
    end Get_Prev_Match_End;
 
    ----------------------------------------------------------------------------
@@ -505,32 +509,32 @@ package body Aho_Corasick with SPARK_Mode is
                               Next_Input : Character) with SPARK_Mode
    is
       Answer : State_Or_None := T.Current_State;
-      Ch     : Character := Next_Input;
    begin
       --  Fast path: direct transition exists
-      if T.Transitions (Answer, Ch) /= No_State then
-         T.Current_State := T.Transitions (Answer, Ch);
+      if T.Transitions (Answer, Next_Input) /= No_State then
+         T.Current_State := T.Transitions (Answer, Next_Input);
          return;
       end if;
 
-      -- Slow path: follow failure links
-      -- Unrolled first iteration for common case
+      --  Slow path: follow failure links
+      --  Unrolled first iteration for common case
       Answer := T.Failures (Answer);
 
       if Answer >= Start_State and then
-         T.Transitions (Answer, Ch) /= No_State then
-         T.Current_State := T.Transitions (Answer, Ch);
+         T.Transitions (Answer, Next_Input) /= No_State
+      then
+         T.Current_State := T.Transitions (Answer, Next_Input);
          return;
       end if;
 
       --  If transition not defined, follow failure links
       while Answer >= Start_State and then
-         T.Transitions (Answer, Ch) = No_State loop
+         T.Transitions (Answer, Next_Input) = No_State loop
 
          Answer := T.Failures (Answer);
       end loop;
 
-      T.Current_State := T.Transitions (Answer, Ch);
+      T.Current_State := T.Transitions (Answer, Next_Input);
    end Find_Next_State;
 
    ----------------------------------------------------------------------------
@@ -546,7 +550,7 @@ package body Aho_Corasick with SPARK_Mode is
       TCI : Simple_Automaton renames T.CI_Automaton;
    begin
       for I in Text'Range loop
-         
+
          C := Text (I);
 
          Find_Next_State (TCS, C);
@@ -558,7 +562,7 @@ package body Aho_Corasick with SPARK_Mode is
             for J in 1 .. TCS.Outputs (TCS.Current_State).Count loop
                declare
                   --  matched pattern index
-                  MPI : Positive :=
+                  MPI : constant Positive :=
                      TCS.Outputs (TCS.Current_State).Matched_Patterns (J);
 
                   Start_Pos      : constant Natural :=
@@ -577,7 +581,7 @@ package body Aho_Corasick with SPARK_Mode is
                      Matches (MPI).EP := Patterns (MPI);
                      Matches (MPI).Start_Position :=
                         (O => Just, Value => Start_Pos);
-                     Matches (MPI).End_Position := 
+                     Matches (MPI).End_Position :=
                         (O => Just, Value => End_Pos);
                   end if;
                end;
@@ -588,7 +592,7 @@ package body Aho_Corasick with SPARK_Mode is
          if TCI.Outputs (TCI.Current_State).Count > 0 then
             for J in 1 .. TCI.Outputs (TCI.Current_State).Count loop
                declare
-                  MPI : Positive :=
+                  MPI : constant Positive :=
                      TCI.Outputs (TCI.Current_State).Matched_Patterns (J);
 
                   Start_Pos      : constant Natural :=
