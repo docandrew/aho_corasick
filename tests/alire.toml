@@ -1,6 +1,6 @@
 name = "tests"
-description = ""
-version = "0.1.0-dev"
+description = "Test Suite for the Aho-Corasick Crate"
+version = "0.1.0"
 
 authors = ["docandrew"]
 maintainers = ["docandrew <19672868+docandrew@users.noreply.github.com>"]

@@ -1,6 +1,6 @@
 name = "aho_corasick"
 description = "Aho-Corasick Implementation"
-version = "0.1.0-dev"
+version = "0.1.0"
 
 authors = ["docandrew"]
 maintainers = ["docandrew <19672868+docandrew@users.noreply.github.com>"]
@@ -13,4 +13,3 @@ tags = []
 
 [[depends-on]]
 gnatprove = "^15.1.0"
-
