@@ -11,134 +11,19 @@
 --  SPDX-License-Identifier: MIT
 -------------------------------------------------------------------------------
 with Ada.Strings.Text_Buffers;
+with SPARK;
 
 package Aho_Corasick with SPARK_Mode is
 
-   --  The maximum length of a pattern that can be matched.
-   --  This is a constant that can be adjusted based on the expected
-   --  length of patterns. This is used for compile-time verification
-   --  and avoiding overflow.
-   Max_Pattern_Length : constant Natural := 1024;
-
-   --  The maximum number of patterns that can be matched.
-   --  This is a constant that can be adjusted based on the expected
-   --  number of patterns. This is used for compile-time verification
-   --  and avoiding overflow.
-   Max_Number_Of_Patterns : constant Natural := 65536;
-
-   --  The maximum number of patterns that can overlap/end at a single state.
-   --  This is a constant that can be adjusted based on the expected number
-   --  of overlapping patterns. If the number of overlapping patterns exceeds
-   --  this value, the automaton will be marked as overloaded and will not
-   --  be usable for matching. This is set to 16 by default, but can be
-   --  changed by the user to a higher value if needed.
-   Max_Overlapping_Patterns : constant Natural := 16;
+   --  Use single matrix to store transitions, failures, and outputs
+   --  One row per state, one column per char, +1 for failure, and then
+   --  one output column per pattern.
+   --           Transitions    Failures   Outputs
+   --  State:   [A][B][C].......[Fail?][P1][P2][P3]...
+   --  State 1: [1][0][2].......[  0  ][ 1][ 0][ 1]...
+   --  State 2: [0][1][0].......[  1  ][ 0][ 0][ 1]...
 
    type Case_Sensitivity is (Case_Sensitive, Case_Insensitive);
-
-   --  State type for better verification
-   --  States are non-negative integers, with -1 as a special "no state" value
-   subtype State is Integer range 0 .. Integer'Last;
-   subtype State_Or_None is Integer range -1 .. Integer'Last;
-
-   --  State constants for clarity
-   No_State    : constant State_Or_None := -1;
-   Start_State : constant State := 0;
-
-   type Transition_Array is
-      array (State range <>, Character range <>) of State_Or_None;
-   type Failure_Array is array (State range <>) of State_Or_None;
-
-   type Pattern_Index_Array is array (Natural range <>) of Natural;
-
-   ----------------------------------------------------------------------------
-   --  State_Output
-   --  For each state, we store the patterns that matched at that state.
-   --
-   --  The maximum number of overlapping patterns is defined by the user.
-   --  i.e. "admin", "cadmin", "dadmin" would all match at the same state.
-   --  See Max_Overlapping_Patterns above.
-   ----------------------------------------------------------------------------
-   type State_Output is record
-      --  The patterns that matched at this state
-      Matched_Patterns : Pattern_Index_Array (1 .. Max_Overlapping_Patterns) :=
-         [others => 0];
-
-      --  The number of patterns that matched at this state
-      Count : Natural := 0;
-   end record;
-
-   type Output_Array is array (Natural range <>) of State_Output;
-
-   ----------------------------------------------------------------------------
-   --  Simple_Automaton
-   --
-   --  Implementation of the Aho-Corasick state machine.
-   --  @param Initialized - Whether the automaton has been initialized
-   --  @param Overloaded - Whether the automaton has been overloaded.
-   --    This can happen if the number of overlapping patterns ending
-   --    at a state exceeds the maximum number. This should be checked
-   --    before using the automaton. If True, the automaton will be
-   --    unusable.
-   --  @param Transitions - The transitions for each state. This is a
-   --    two-dimensional array where the first dimension is the state
-   --    and the second dimension is the character. The value is the
-   --    next state to transition to when the character is encountered.
-   --  @param Failures - The failure states for each state. This is a
-   --    one-dimensional array where the index is the state. The value
-   --    is the state to transition to when there is no transition for
-   --    the character encountered.
-   --  @param Outputs - The outputs for each state. This is a
-   --    one-dimensional array where the index is the state. The value
-   --    is a record containing the patterns that matched at that state
-   --    and the number of patterns that matched.
-   --  @param Current_State - The current state of the automaton.
-   ----------------------------------------------------------------------------
-   type Simple_Automaton (Max_States : State) is limited record
-      Initialized : Boolean := False;
-      Overloaded  : Boolean := False;
-
-      Transitions : Transition_Array (0 .. Max_States,
-         Character'First .. Character'Last);
-      Failures : Failure_Array (0 .. Max_States);
-      Outputs : Output_Array (0 .. Max_States);
-
-      Current_State : State := Start_State;
-   end record;
-
-   ----------------------------------------------------------------------------
-   --  Automaton
-   --
-   --  This is the main automaton that combines both case-sensitive and
-   --  case-insensitive matching. It contains two Simple_Automaton instances,
-   --  one for case-sensitive matching and one for case-insensitive matching.
-   --  The automaton is initialized with the patterns provided and can then
-   --  be used to find matches in a text.
-   --  @param Initialized - Whether the automaton has been initialized
-   --  @param Overloaded - Whether either of the case-sensitive or
-   --   case-insitive automata have been overloaded. This can happen if the
-   --   number of overlapping patterns ending at a state exceeds the maximum
-   --   number. This should be checked before using the automaton. If True,
-   --   the automaton will be unusable, and calls to Find_Matches will
-   --   fail.
-   --  @param CS_Automaton - The case-sensitive automaton
-   --  @param CI_Automaton - The case-insensitive automaton
-   --  @param Stream_Index - The position in the overall stream from which
-   --    matches occur. This is used for streaming text. If the text is not
-   --    streaming, this should be reset to 0 manually or by calling
-   --    Build_Automaton again.
-   ----------------------------------------------------------------------------
-   type Automaton (CS_States : Natural; CI_States : Natural) is limited record
-      Initialized : Boolean := False;
-      Overloaded  : Boolean := False;
-
-      CS_Automaton : Simple_Automaton (CS_States);
-      CI_Automaton : Simple_Automaton (CI_States);
-
-      --  If streaming text, this is the position from the beginning
-      --  of all streaming.
-      Stream_Index : Natural := 0;
-   end record;
 
    type String_Access is access constant String;
 
@@ -195,14 +80,13 @@ package Aho_Corasick with SPARK_Mode is
       Within   : Integer_Option := (O => None);
    end record with Dynamic_Predicate =>
       (Pattern /= null and then
-       Pattern'Length > 0 and then
-       Pattern'Length <= Max_Pattern_Length);
+       Pattern'Length > 0);
 
    type Enhanced_Pattern_Access is access constant Enhanced_Pattern;
 
-   subtype Pattern_Count is Positive range 1 .. Max_Number_Of_Patterns;
+   subtype Pattern_Array_Index is Positive range 1 .. 65535;
 
-   type Pattern_Array is array (Pattern_Count range <>)
+   type Pattern_Array is array (Pattern_Array_Index range <>)
       of not null Enhanced_Pattern_Access;
 
    type Match is record
@@ -214,67 +98,85 @@ package Aho_Corasick with SPARK_Mode is
    type Match_Array is array (Positive range <>) of Match;
 
    ----------------------------------------------------------------------------
-   --  Build_Automaton
-   --
-   --  Create a new pattern matcher. Determines the parameters for the
-   --  Aho-Corasick state machine/automaton from the patterns provided. The
-   --  automaton can then be used to find matches in a text. Mixing
-   --  case-sensitive and case-insensitive patterns is supported.
-   --  @param Patterns is the array of patterns to match against.
-   --    This should be an array of Enhanced_Pattern_Access, which allows
-   --    for more complex matching rules such as case-insensitivity, offsets,
-   --    and depth limits (see Snort rules for how these are used)
-   --  @return The automaton that can be used to find matches in a text.
+   --  Automatons sub-package
    ----------------------------------------------------------------------------
-   function Build_Automaton (Patterns : Pattern_Array)
-      return Automaton
-         with
-            Pre => Patterns'Length > 0,
-            Post => Build_Automaton'Result.Initialized = True;
+   generic
+      Patterns : Pattern_Array;
+   package Automatons with SPARK_Mode is
+      function Get_Max_States (Patterns : Pattern_Array;
+                               Nocase   : Case_Sensitivity)
+         return Positive with SPARK_Mode;
 
-   ----------------------------------------------------------------------------
-   --  Find_Matches
-   --
-   --  Find all matches of patterns in the text. If called on
-   --  subsequent texts, matching will continue from the
-   --  last position in the text. This function can therefore
-   --  be used for streaming text. If this is not desired,
-   --  reset the automaton by calling Build_Automaton again or by manually
-   --  resetting the Automaton.Stream_Index field to 0.
-   --
-   --  @param T is the automaton to use for matching. It must be
-   --    initialized with Build_Automaton before use.
-   --  @param Patterns is the array of patterns to match against.
-   --    This should be the same array used to build the automaton.
-   --  @param Matches is the output array where matches will be stored.
-   --  @param Text is the text to search for matches in.
-   --  @return The matches found in the text. The matches will be
-   --    stored in the Matches array of the automaton which is statically
-   --    allocated based on the number of patterns provided.
-   ----------------------------------------------------------------------------
-   procedure Find_Matches (T        : in out Automaton;
-                           Patterns : Pattern_Array;
-                           Matches  : in out Match_Array;
-                           Text     : String)
-      with Pre => T.Initialized and then
-                  not T.Overloaded and then
-                  Patterns'Length > 0 and then
-                  Patterns'Length <= Max_Number_Of_Patterns and then
-                  Matches'Length >= Patterns'Length and then
-                  (for all P of Patterns => P /= null) and then
-                  (for all P of Patterns => P.Pattern /= null) and then
-                  (for all P of Patterns => P.Pattern'Length <=
-                     Max_Pattern_Length);
+      CS_Max_States : constant Natural :=
+         Get_Max_States (Patterns, Case_Sensitive);
+      CI_Max_States : constant Natural :=
+         Get_Max_States (Patterns, Case_Insensitive);
 
-   ----------------------------------------------------------------------------
-   --  Reset
-   --  Reset the automaton to its initial state. This will clear the current
-   --  state and the stream index, allowing for a fresh start with new text.
-   --  This is useful for non-streaming text where you want to start over
-   --  without rebuilding the automaton.
-   --  @param T is the automaton to reset. It must be initialized.
-   ----------------------------------------------------------------------------
-   procedure Reset (T : in out Automaton)
-      with Pre => T.Initialized and then not T.Overloaded;
+      --  0-255 for chars + 1 for failure + patterns
+      Num_Cols : constant Natural := 255 + 1 + Patterns'Length;
+
+      --  Column indices for the automaton matrices
+      type Column_Idx is new Positive range 0 .. Num_Cols - 1;
+
+      Failure_Idx      : constant Column_Idx := 256;
+      Output_Start_Idx : constant Column_Idx := 257;
+
+      --  Row indices for the automaton matrices
+      type CS_State is new Positive range 0 .. CS_Max_States - 1;
+      type CI_State is new Positive range 0 .. CI_Max_States - 1;
+
+      CS_Start_State : constant CS_State := 0;
+      CI_Start_State : constant CI_State := 0;
+
+      type State_Validity is (Uninitialized,
+                              Valid_State,
+                              No_Transition,
+                              Valid_Output,
+                              No_Output);
+
+      type CS_Transition is record
+         Valid      : State_Validity := Uninitialized;
+         Next_State : CS_State := CS_Start_State;
+      end record;
+
+      type CI_Transition is record
+         Valid      : State_Validity := Uninitialized;
+         Next_State : CI_State := CI_Start_State;
+      end record;
+
+      type CS_Matrix is array (CS_State, Column_Idx) of CS_Transition;
+      type CI_Matrix is array (CI_State, Column_Idx) of CI_Transition;
+
+      -------------------------------------------------------------------------
+      --  Automaton
+      --  This record holds the state matrices for both case-sensitive and
+      --  case-insensitive automata, along with the current states and
+      --  initialization status.
+      --  @param CS_States is the case-sensitive state transition matrix
+      --  @param CI_States is the case-insensitive state transition matrix
+      --  @param CS_Current_State is the current state of the case-sensitive
+      --   automaton
+      --  @param CI_Current_State is the current state of the case-insensitive
+      --   automaton
+      --  @param Initialized indicates whether the automaton has been
+      --   initialized
+      --  @param Stream_Idx is the index of the current stream being processed
+      -------------------------------------------------------------------------
+      type Automaton is limited record
+         CS_States        : CS_Matrix;
+         CI_States        : CI_Matrix;
+
+         CS_Current_State : CS_State := CS_Start_State;
+         CI_Current_State : CI_State := CI_Start_State;
+
+         Initialized      : Boolean := False;
+
+         Stream_Idx       : Natural := 1;
+      end record;
+
+      function Build_Automaton (Patterns : Pattern_Array) return Automaton
+         with SPARK_Mode;
+
+   end Automatons;
 
 end Aho_Corasick;
