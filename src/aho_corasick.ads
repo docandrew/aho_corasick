@@ -95,7 +95,7 @@ package Aho_Corasick with SPARK_Mode is
       End_Position   : Integer_Option := No_Value;
    end record;
 
-   type Match_Array is array (Positive range <>) of Match;
+   type Match_Array is array (Pattern_Array_Index range <>) of Match;
 
    ----------------------------------------------------------------------------
    --  Automatons sub-package
@@ -131,8 +131,7 @@ package Aho_Corasick with SPARK_Mode is
       type State_Validity is (Uninitialized,
                               Valid_State,
                               No_Transition,
-                              Valid_Output,
-                              No_Output);
+                              Valid_Output);
 
       type CS_Transition is record
          Valid      : State_Validity := Uninitialized;
@@ -171,7 +170,7 @@ package Aho_Corasick with SPARK_Mode is
 
          Initialized      : Boolean := False;
 
-         Stream_Idx       : Natural := 1;
+         Stream_Idx       : Positive := 1;
       end record;
 
       function Build_Automaton (Patterns : Pattern_Array) return Automaton
