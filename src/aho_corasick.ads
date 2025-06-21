@@ -16,7 +16,7 @@ with SPARK;
 package Aho_Corasick with SPARK_Mode is
 
    --  Use single matrix to store transitions, failures, and outputs
-   --  One row per state, one column per char, +1 for failure, and then
+   --  One row per state, one column per char, one for failure, and then
    --  one output column per pattern.
    --           Transitions    Failures   Outputs
    --  State:   [A][B][C].......[Fail?][P1][P2][P3]...
@@ -97,15 +97,16 @@ package Aho_Corasick with SPARK_Mode is
 
    type Match_Array is array (Pattern_Array_Index range <>) of Match;
 
+   function Get_Max_States (Patterns : Pattern_Array;
+                            Nocase   : Case_Sensitivity)
+      return Positive with SPARK_Mode;
+
    ----------------------------------------------------------------------------
    --  Automatons sub-package
    ----------------------------------------------------------------------------
    generic
       Patterns : Pattern_Array;
    package Automatons with SPARK_Mode is
-      function Get_Max_States (Patterns : Pattern_Array;
-                               Nocase   : Case_Sensitivity)
-         return Positive with SPARK_Mode;
 
       CS_Max_States : constant Natural :=
          Get_Max_States (Patterns, Case_Sensitive);
@@ -165,6 +166,9 @@ package Aho_Corasick with SPARK_Mode is
          CS_States        : CS_Matrix;
          CI_States        : CI_Matrix;
 
+         Has_CS           : Boolean := False;
+         Has_CI           : Boolean := False;
+
          CS_Current_State : CS_State := CS_Start_State;
          CI_Current_State : CI_State := CI_Start_State;
 
@@ -173,8 +177,31 @@ package Aho_Corasick with SPARK_Mode is
          Stream_Idx       : Positive := 1;
       end record;
 
+      -------------------------------------------------------------------------
+      --  Build_Automaton
+      --  This function initializes the automaton matrices for both
+      --  case-sensitive and case-insensitive patterns.
+      -------------------------------------------------------------------------
       function Build_Automaton (Patterns : Pattern_Array) return Automaton
-         with SPARK_Mode;
+         with SPARK_Mode,
+              Pre => Patterns'Length > 0 and then
+                     Patterns'Length <= Pattern_Array_Index'Last,
+              Post => Build_Automaton'Result.Initialized = True;
+
+      -------------------------------------------------------------------------
+      --  Find_Matches
+      --  This procedure finds matches for the given patterns in the provided
+      --  text using the Aho-Corasick algorithm across both the Case-sensitive
+      --  and case-insensitive automatons.
+      --  @param T        The automaton containing the state matrices.
+      --  @param Patterns The patterns to search for.
+      --  @param Matches  The array to store the found matches.
+      --  @param Text     The input text to search within.
+      -------------------------------------------------------------------------
+      procedure Find_Matches (T        : in out Automaton;
+                              Patterns : Pattern_Array;
+                              Matches  : in out Match_Array;
+                              Text     : String) with SPARK_Mode;
 
    end Automatons;
 

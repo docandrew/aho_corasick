@@ -65,6 +65,51 @@ package body Aho_Corasick with SPARK_Mode is
    end To_Lower;
 
    ----------------------------------------------------------------------------
+   --  Sum_Lengths
+   --  This function computes the sum of lengths of all case-sensitive or
+   --  case-insensitive patterns in the array, giving us the total number of
+   --  states needed in the automaton.
+   ----------------------------------------------------------------------------
+   function Sum_Lengths (Patterns : Pattern_Array;
+                         Nocase   : Case_Sensitivity) return Natural
+      with SPARK_Mode,
+         Pre => Patterns'Length > 0 and then
+               (for all I in Patterns'Range =>
+                  Patterns (I) /= null and then
+                  Patterns (I).Pattern /= null and then
+                  Patterns (I).Pattern'Length > 0);
+
+   function Sum_Lengths (Patterns : Pattern_Array;
+                         Nocase   : Case_Sensitivity) return Natural
+      with SPARK_Mode
+   is
+      Result : Natural := 0;
+   begin
+      for I in Patterns'Range loop
+
+         --  Only count patterns that match the specified case-sensitivity
+         if Patterns (I).Nocase = Nocase then
+            Result := Result + Patterns (I).Pattern'Length;
+         end if;
+      end loop;
+
+      return Result;
+   end Sum_Lengths;
+
+   ----------------------------------------------------------------------------
+   --  Get_Max_States
+   --  This function computes the maximum number of states needed for the
+   --  automaton based on the sum of lengths of the patterns.
+   ----------------------------------------------------------------------------
+   function Get_Max_States (Patterns : Pattern_Array;
+                            Nocase   : Case_Sensitivity)
+      return Positive with SPARK_Mode
+   is
+   begin
+      return Sum_Lengths (Patterns, Nocase) + 1; --  +1 for initial state
+   end Get_Max_States;
+
+   ----------------------------------------------------------------------------
    --  Automatons sub-package
    ----------------------------------------------------------------------------
    package body Automatons is
@@ -83,42 +128,6 @@ package body Aho_Corasick with SPARK_Mode is
          (Output_Start_Idx + Column_Idx (Pattern_Idx) - 1) with SPARK_Mode,
             Pre => Pattern_Idx in 1 .. Patterns'Length and then
                    Column_Idx (Pattern_Idx) <= Column_Idx'Last;
-
-      -------------------------------------------------------------------------
-      --  Sum_Lengths
-      --  This function computes the sum of lengths of all case-sensitive or
-      --  case-insensitive patterns in the array, giving us the total number of
-      --  states needed in the automaton.
-      -------------------------------------------------------------------------
-      function Sum_Lengths (Patterns : Pattern_Array;
-                            Nocase   : Case_Sensitivity) return Natural
-         with SPARK_Mode
-      is
-         Result : Natural := 0;
-      begin
-         for I in Patterns'Range loop
-
-            --  Only count patterns that match the specified case-sensitivity
-            if Patterns (I).Nocase = Nocase then
-               Result := Result + Patterns (I).Pattern'Length;
-            end if;
-         end loop;
-
-         return Result;
-      end Sum_Lengths;
-
-      -------------------------------------------------------------------------
-      --  Get_Max_States
-      --  This function computes the maximum number of states needed for the
-      --  automaton based on the sum of lengths of the patterns.
-      -------------------------------------------------------------------------
-      function Get_Max_States (Patterns : Pattern_Array;
-                               Nocase   : Case_Sensitivity)
-         return Positive with SPARK_Mode
-      is
-      begin
-         return Sum_Lengths (Patterns, Nocase) + 1; --  +1 for initial state
-      end Get_Max_States;
 
       -------------------------------------------------------------------------
       --  Helper functions for the automaton matrices
@@ -857,22 +866,63 @@ package body Aho_Corasick with SPARK_Mode is
       end Build_CI_Failure_Links;
 
       -------------------------------------------------------------------------
+      --  Has_CS_Pattern
+      -------------------------------------------------------------------------
+      function Has_CS_Pattern (Patterns : Pattern_Array)
+         return Boolean with SPARK_Mode
+      is
+         Has_CS : Boolean := False;
+      begin
+         for I in Patterns'Range loop
+            if Patterns (I) /= null and then
+               Patterns (I).Nocase = Case_Sensitive then
+               return True;
+            end if;
+         end loop;
+
+         return False;
+      end Has_CS_Pattern;
+
+      -------------------------------------------------------------------------
+      --  Has_CI_Pattern
+      -------------------------------------------------------------------------
+      function Has_CI_Pattern (Patterns : Pattern_Array)
+         return Boolean with SPARK_Mode
+      is
+         Has_CI : Boolean := False;
+      begin
+         for I in Patterns'Range loop
+            if Patterns (I) /= null and then
+               Patterns (I).Nocase = Case_Insensitive then
+               return True;
+            end if;
+         end loop;
+
+         return False;
+      end Has_CI_Pattern;
+
+      -------------------------------------------------------------------------
       --  Build_Automaton
-      --  This function initializes the automaton matrices for both
-      --  case-sensitive and case-insensitive patterns.
       -------------------------------------------------------------------------
       function Build_Automaton (Patterns : Pattern_Array) return Automaton
          with SPARK_Mode
       is
       begin
          return T : Automaton do
-            Build_CI_Trie (T.CI_States, Patterns);
-            Build_CI_Failure_Links (T.CI_States);
-            Build_CS_Trie (T.CS_States, Patterns);
-            Build_CS_Failure_Links (T.CS_States);
+            if Has_CS_Pattern (Patterns) then
+               Build_CS_Trie (T.CS_States, Patterns);
+               Build_CS_Failure_Links (T.CS_States);
+               T.CS_Current_State := CS_Start_State;
+            end if;
+
+            if Has_CI_Pattern (Patterns) then
+               Build_CI_Trie (T.CI_States, Patterns);
+               Build_CI_Failure_Links (T.CI_States);
+               T.Has_CI := True;
+               T.CI_Current_State := CI_Start_State;
+            end if;
+
             T.Initialized := True;
-            T.CS_Current_State := CS_Start_State;
-            T.CI_Current_State := CI_Start_State;
          end return;
       end Build_Automaton;
 
@@ -1175,23 +1225,21 @@ package body Aho_Corasick with SPARK_Mode is
 
       -------------------------------------------------------------------------
       --  Find_Matches
-      --  This procedure finds matches for the given patterns in the provided
-      --  text using the Aho-Corasick algorithm across both the Case-sensitive
-      --  and case-insensitive automatons.
-      --  @param T        The automaton containing the state matrices.
-      --  @param Patterns The patterns to search for.
-      --  @param Matches  The array to store the found matches.
-      --  @param Text     The input text to search within.
       -------------------------------------------------------------------------
       procedure Find_Matches (T        : in out Automaton;
                               Patterns : Pattern_Array;
                               Matches  : in out Match_Array;
                               Text     : String) with SPARK_Mode is
       begin
-         Search_CS (T.CS_States, Text, Patterns,
-                        T.CS_Current_State, T.Stream_Idx, Matches);
-         Search_CI (T.CI_States, Text, Patterns,
-                        T.CI_Current_State, T.Stream_Idx, Matches);
+         if T.Has_CS then
+            Search_CS (T.CS_States, Text, Patterns,
+                           T.CS_Current_State, T.Stream_Idx, Matches);
+         end if;
+
+         if T.Has_CI then
+            Search_CI (T.CI_States, Text, Patterns,
+                           T.CI_Current_State, T.Stream_Idx, Matches);
+         end if;
       end Find_Matches;
 
    end Automatons;

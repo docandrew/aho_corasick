@@ -54,33 +54,60 @@ procedure Tests is
               "Integer_Option 4 compared correctly");
    end Test_Integer_Options;
 
-   --  ----------------------------------------------------------------------------
-   --  --  Test case 1: Simple pattern matching
-   --  ----------------------------------------------------------------------------
-   --  procedure Basic_Test_1 is
-   --     Patterns : constant Aho_Corasick.Pattern_Array (1 .. 2) :=
-   --       [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
-   --        new Enhanced_Pattern'(Pattern => new String'("def"), others => <>)];
-   --     T : Aho_Corasick.Automaton := Aho_Corasick.Build_Automaton (Patterns);
-   --     Matches  : Aho_Corasick.Match_Array (Patterns'Range);
-   --     Text     : constant String := "abcdefghi";
-   --  begin
-   --     Put_Line ("=== Testing Basic Pattern Matching ===");
+   procedure Test_State_Counting is
+      --  Test state counting functionality
+      Patterns : constant Pattern_Array (1 .. 3) :=
+        [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
+         new Enhanced_Pattern'(Pattern => new String'("def"), others => <>),
+         new Enhanced_Pattern'(Pattern => new String'("ghi"), others => <>)];
+      
+      Max_States : constant Natural :=
+         Get_Max_States (Patterns, Case_Sensitive);
+   begin
+      Put_Line ("=== Testing State Counting ===");
 
-   --     Aho_Corasick.Find_Matches (T, Patterns, Matches, Text);
+      Put_Line ("Max states for 3 patterns: " & Max_States'Image);
+      Assert (Max_States = 10, "Max states for 3 patterns is 10");
 
-   --     for Match of Matches loop
-   --        if Match.EP /= null then
-   --           Ada.Text_IO.Put_Line ("Found pattern: " & Match.EP.Pattern.all &
-   --                                 " at positions " &
-   --                                 Match.Start_Position'Image & " to "
-   --                                 & Match.End_Position'Image);
-   --        end if;
-   --     end loop;
+      --  Check if the state count matches expected values
+      --  For 3 patterns, we expect:
+      --  - 'abc' adds 3 states (a, b, c)
+      --  - 'def' adds 3 more states (d, e, f)
+      --  - 'ghi' adds 3 more states (g, h, i)
+      --  - Plus the root state
+   end Test_State_Counting;
 
-   --     Assert (Matches (1).EP.Pattern /= null, "'abc' found in Basic_Test_1");
-   --     Assert (Matches (2).EP.Pattern /= null, "'def' found in Basic_Test_1");
-   --  end Basic_Test_1;
+   ----------------------------------------------------------------------------
+   --  Test case 1: Simple pattern matching
+   ----------------------------------------------------------------------------
+   procedure Basic_Test_1 is
+      Patterns : constant Aho_Corasick.Pattern_Array (1 .. 2) :=
+        [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
+         new Enhanced_Pattern'(Pattern => new String'("def"), others => <>)];
+      Matches  : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
+      T : Automaton := Build_Automaton (Patterns);
+      Text     : constant String := "abcdefghi";
+   begin
+      Put_Line ("=== Testing Basic Pattern Matching ===");
+
+      Find_Matches (T, Patterns, Matches, Text);
+
+      for Match of Matches loop
+         if Match.EP /= null then
+            Ada.Text_IO.Put_Line ("Found pattern: " & Match.EP.Pattern.all &
+                                  " at positions " &
+                                  Match.Start_Position'Image & " to "
+                                  & Match.End_Position'Image);
+         end if;
+      end loop;
+
+      Assert (Matches (1).EP.Pattern /= null, "'abc' found in Basic_Test_1");
+      Assert (Matches (2).EP.Pattern /= null, "'def' found in Basic_Test_1");
+   end Basic_Test_1;
 
    --  ----------------------------------------------------------------------------
    --  --  Test case 1b: Case-insensitive pattern matching
@@ -831,7 +858,8 @@ procedure Tests is
 begin
 
    Test_Integer_Options;
-   --  Basic_Test_1;
+   Test_State_Counting;
+   Basic_Test_1;
    --  Basic_Test_1_Nocase;
    --  Basic_Test_2;
    --  Basic_Test_3;
