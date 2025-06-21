@@ -116,14 +116,14 @@ package Aho_Corasick with SPARK_Mode is
       Num_Cols : constant Natural := 255 + 1 + Patterns'Length;
 
       --  Column indices for the automaton matrices
-      type Column_Idx is new Positive range 0 .. Num_Cols - 1;
+      type Column_Idx is new Natural range 0 .. Num_Cols - 1;
 
       Failure_Idx      : constant Column_Idx := 256;
       Output_Start_Idx : constant Column_Idx := 257;
 
       --  Row indices for the automaton matrices
-      type CS_State is new Positive range 0 .. CS_Max_States - 1;
-      type CI_State is new Positive range 0 .. CI_Max_States - 1;
+      type CS_State is new Natural range 0 .. CS_Max_States - 1;
+      type CI_State is new Natural range 0 .. CI_Max_States - 1;
 
       CS_Start_State : constant CS_State := 0;
       CI_Start_State : constant CI_State := 0;
