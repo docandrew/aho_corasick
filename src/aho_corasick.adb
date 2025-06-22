@@ -11,11 +11,11 @@
 --  SPDX-License-Identifier: MIT
 -------------------------------------------------------------------------------
 with Ada.Containers;
-with Ada.Text_IO;
-with Aho_Corasick;
 with SPARK.Containers.Formal.Doubly_Linked_Lists;
 
 package body Aho_Corasick with SPARK_Mode is
+
+   pragma Suppress (All_Checks);
 
    ----------------------------------------------------------------------------
    --  From_Integer
@@ -328,32 +328,6 @@ package body Aho_Corasick with SPARK_Mode is
          with SPARK_Mode,
             Pre => Matrix (From_State, Failure_Idx).Valid = Valid_State,
             Post => Get_CI_Failure_Link'Result in CI_State'Range;
-
-      -------------------------------------------------------------------------
-      --  Has_Pattern_Output_CS
-      --  This function checks if a given state has a pattern output in the
-      --  case-sensitive automaton.
-      -------------------------------------------------------------------------
-      function Has_Pattern_Output_CS (
-         Matrix        : CS_Matrix;
-         State         : CS_State;
-         Pattern_Index : Positive) return Boolean
-            is (Matrix (State, Column (Pattern_Index)).Valid = Valid_Output)
-         with SPARK_Mode,
-              Pre => Pattern_Index in 1 .. Patterns'Length and then
-                     Column (Pattern_Index) <= Column_Idx'Last;
-
-      -------------------------------------------------------------------------
-      --  Has_Pattern_Output_CI
-      -------------------------------------------------------------------------
-      function Has_Pattern_Output_CI (
-         Matrix        : CI_Matrix;
-         State         : CI_State;
-         Pattern_Index : Positive) return Boolean
-            is (Matrix (State, Column (Pattern_Index)).Valid = Valid_Output)
-         with SPARK_Mode,
-            Pre => Pattern_Index in 1 .. Patterns'Length and then
-                  Column (Pattern_Index) <= Column_Idx'Last;
 
       -------------------------------------------------------------------------
       --
@@ -880,11 +854,11 @@ package body Aho_Corasick with SPARK_Mode is
       function Has_CS_Pattern (Patterns : Pattern_Array)
          return Boolean with SPARK_Mode
       is
-         Has_CS : Boolean := False;
       begin
          for I in Patterns'Range loop
             if Patterns (I) /= null and then
-               Patterns (I).Nocase = Case_Sensitive then
+               Patterns (I).Nocase = Case_Sensitive
+            then
                return True;
             end if;
          end loop;
@@ -898,11 +872,11 @@ package body Aho_Corasick with SPARK_Mode is
       function Has_CI_Pattern (Patterns : Pattern_Array)
          return Boolean with SPARK_Mode
       is
-         Has_CI : Boolean := False;
       begin
          for I in Patterns'Range loop
             if Patterns (I) /= null and then
-               Patterns (I).Nocase = Case_Insensitive then
+               Patterns (I).Nocase = Case_Insensitive
+            then
                return True;
             end if;
          end loop;
@@ -952,7 +926,6 @@ package body Aho_Corasick with SPARK_Mode is
          with SPARK_Mode
       is
          State            : CS_State := From_State;
-         Found_Transition : Boolean := False;
       begin
          --  Find a valid transition for the char
          for I in 1 .. CS_State'Last loop
@@ -961,8 +934,6 @@ package body Aho_Corasick with SPARK_Mode is
                   Get_CS_Character_Transition (Matrix, State, Char);
             begin
                if T.Valid = Valid_State then
-                  --  Found a valid transition
-                  Found_Transition := True;
                   return T.Next_State;
                else
                   --  Follow the failure link to the next state
@@ -984,7 +955,6 @@ package body Aho_Corasick with SPARK_Mode is
          with SPARK_Mode
       is
          State            : CI_State := From_State;
-         Found_Transition : Boolean := False;
       begin
          --  Find a valid transition for the char
          for I in 1 .. CI_State'Last loop
@@ -993,8 +963,6 @@ package body Aho_Corasick with SPARK_Mode is
                   Get_CI_Character_Transition (Matrix, State, Char);
             begin
                if T.Valid = Valid_State then
-                  --  Found a valid transition
-                  Found_Transition := True;
                   return T.Next_State;
                else
                   --  Follow the failure link to the next state
@@ -1126,8 +1094,8 @@ package body Aho_Corasick with SPARK_Mode is
                if Check_Match_Position (Pattern        => Patterns (I),
                                         Start_Pos      => Start_Pos,
                                         End_Pos        => Stream_Idx,
-                                        Prev_Match_End => Prev_End) then
-
+                                        Prev_Match_End => Prev_End)
+               then
                   --  Valid match found, update the Matches array
                   Matches (I) := (EP             => Patterns (I),
                                   Start_Position =>
@@ -1158,7 +1126,7 @@ package body Aho_Corasick with SPARK_Mode is
          --  Iterate through the outputs at this state, and update the matches
          --  if any are found.
          for I in Matches'Range loop
-            if Matrix (State, Column(I)).Valid = Valid_Output then
+            if Matrix (State, Column (I)).Valid = Valid_Output then
                --  Found a match for pattern I at this state
                Start_Pos := Stream_Idx - Patterns (I).Pattern'Length + 1;
                Prev_End  := Get_Prev_Match_End (Matches, I);
@@ -1167,7 +1135,8 @@ package body Aho_Corasick with SPARK_Mode is
                if Check_Match_Position (Pattern        => Patterns (I),
                                         Start_Pos      => Start_Pos,
                                         End_Pos        => Stream_Idx,
-                                        Prev_Match_End => Prev_End) then
+                                        Prev_Match_End => Prev_End)
+               then
 
                   --  Valid match found, update the Matches array
                   Matches (I) := (EP             => Patterns (I),
