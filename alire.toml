@@ -7,7 +7,7 @@ maintainers = ["docandrew <jonfandrew@fastmail.com>"]
 maintainers-logins = ["docandrew"]
 licenses = "MIT OR Apache-2.0 WITH LLVM-exception"
 website = ""
-tags = ["strings", "search", "matching", "intrusion detection", "aho-corasick"]
+tags = ["strings", "search", "matching", "intrusion", "aho-corasick"]
 
 # project-files = ["aho_corasick.gpr", "sparklib.gpr"]
 
