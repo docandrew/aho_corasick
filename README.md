@@ -10,6 +10,9 @@ patterns and the text.
 - Mixed-case pattern matching
 - Formally-verified using SPARK (Bronze mode only)
 - Stream processing support (process text in chunks while maintaining state)
+- Snort/Suricata-like position restrictions (depth/offset/distance/within) for
+   limiting matches at certain positions in the text or relative to other
+   matches
 
 ## Notes
 - The library uses Ada 2022 features and requires a version of GNAT that
@@ -17,26 +20,28 @@ patterns and the text.
 - SPARKLib is used for its verified Doubly-Linked List implementation.
 
 ## Limitations
-- The library has pre-defined maximum lengths for patterns, the number
-  of patterns, and the number of "overlapping" patterns, which is to say
-  patterns that can match at the same position in the text. These can be
-  adjusted in the `src/aho_corasick.ads` file, but the defaults are
-  generous and should be suitable for most use cases.
+- The library has pre-defined maximum lengths for patterns and the number
+  of patterns. These are arbitrary and used for proving properties about the
+  code. They can be adjusted in the `src/aho_corasick.ads` file, but the
+  defaults are generous and should be suitable for most use cases.
 
 ## Usage
 
 ```ada
    procedure Example is
-      --  Note: in real code you would want to free these allocated objects
-      Needles : constant Aho_Corasick.Pattern_Array (1 .. 2) :=
-        [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
-         new Enhanced_Pattern'(Pattern => new String'("def"), others => <>)];
+       --  Note: in real code you would want to free these allocated objects
+       Needles : constant Aho_Corasick.Pattern_Array (1 .. 2) :=
+         [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
+          new Enhanced_Pattern'(Pattern => new String'("def"), others => <>)];
+       Matches  : Aho_Corasick.Match_Array (Needles'Range);
 
-      T : Aho_Corasick.Automaton := Aho_Corasick.Build_Automaton (Needles);
-      Matches  : Aho_Corasick.Match_Array (Needles'Range);
+       package Matcher is new Aho_Corasick.Automatons (Needles);
+       use Matcher;
+
+      T : Automaton := Build_Automaton (Needles);
       Haystack : constant String := "abcdefghi";
    begin
-      Aho_Corasick.Find_Matches (T, Needles, Matches, Haystack);
+      Find_Matches (T, Needles, Matches, Haystack);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -51,3 +56,6 @@ patterns and the text.
       Assert (Matches (2).EP.Pattern /= null, "'def' found in Basic_Test_1");
    end Basic_Test_1;
 ```
+
+See the tests package for more examples of features such as case-sensitivity,
+stream processing, and position restrictions.

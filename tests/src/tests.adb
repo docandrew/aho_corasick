@@ -381,57 +381,60 @@ procedure Tests is
    --  Test_High_Pattern_Count
    --  Test with many patterns (typical IDS rule set)
    ----------------------------------------------------------------------------
-   --  procedure Test_High_Pattern_Count is
+   procedure Test_High_Pattern_Count is
 
-   --     --  Helper to create pattern strings
-   --     function Make_Pattern (Index : Natural) return Enhanced_Pattern_Access is
-   --        Pattern_Str : constant String := "pattern_" &
-   --           (if Index < 10 then "00" & Index'Image (2 .. Index'Image'Last)
-   --            elsif Index < 100 then "0" & Index'Image (2 .. Index'Image'Last)
-   --            else Index'Image (2 .. Index'Image'Last));
-   --     begin
-   --        return new Enhanced_Pattern'(Pattern => new String'(Pattern_Str),
-   --                Nocase  => Case_Sensitive,
-   --                others => <>);
-   --     end Make_Pattern;
+      --  Helper to create pattern strings
+      function Make_Pattern (Index : Natural) return Enhanced_Pattern_Access is
+         Pattern_Str : constant String := "pattern_" &
+            (if Index < 10 then "00" & Index'Image (2 .. Index'Image'Last)
+             elsif Index < 100 then "0" & Index'Image (2 .. Index'Image'Last)
+             else Index'Image (2 .. Index'Image'Last));
+      begin
+         return new Enhanced_Pattern'(Pattern => new String'(Pattern_Str),
+                 Nocase  => Case_Sensitive,
+                 others => <>);
+      end Make_Pattern;
 
-   --     Pattern_Ptrs : constant Pattern_Array (1 .. 200) := [for J in 1 .. 200 =>
-   --        Make_Pattern (J)];
+      Pattern_Ptrs : constant Pattern_Array (1 .. 200) := [for J in 1 .. 200 =>
+         Make_Pattern (J)];
+      Matches : Match_Array (Pattern_Ptrs'Range);
 
-   --     Text : constant String :=
-   --        "This text contains pattern050 and pattern150 to test";
-   --     Matches : Match_Array (1 .. 50);
+      package Matcher is new Aho_Corasick.Automatons (Pattern_Ptrs);
+      use Matcher;
 
-   --     Start_Time, End_Time : Time;
-   --  begin
-   --     Put_Line ("=== Testing High Pattern Count ===");
+      Text : constant String :=
+         "This text contains pattern050 and pattern150 to test";
 
-   --     --  Build automaton
-   --     Start_Time := Clock;
+      Start_Time, End_Time : Time;
+   begin
+      Put_Line ("=== Testing High Pattern Count ===");
 
-   --     declare
-   --        A : Automaton := Build_Automaton (Pattern_Ptrs);
-   --     begin
+      --  Build automaton
+      Start_Time := Clock;
 
-   --        End_Time := Clock;
+      declare
+         A : Automaton := Build_Automaton (Pattern_Ptrs);
+      begin
 
-   --        Put_Line ("Built automaton with 200 patterns in: " &
-   --                 Duration'Image (To_Duration (End_Time - Start_Time)) &
-   --                 " seconds");
+         End_Time := Clock;
 
-   --        --  Test search performance
-   --        Start_Time := Clock;
-   --        Find_Matches (A, Pattern_Ptrs, Matches, Text);
-   --        End_Time := Clock;
+         Put_Line ("Built automaton with 200 patterns in: " &
+                  Duration'Image (To_Duration (End_Time - Start_Time)) &
+                  " seconds");
 
-   --        Put_Line ("Search with 200 patterns in: " &
-   --                 Duration'Image (To_Duration (End_Time - Start_Time)) &
-   --                 " seconds");
+         --  Test search performance
+         Start_Time := Clock;
+         Find_Matches (A, Pattern_Ptrs, Matches, Text);
+         End_Time := Clock;
 
-   --        Assert (To_Duration (End_Time - Start_Time) < 0.001,
-   --              "High pattern count - search under 1ms");
-   --     end;
-   --  end Test_High_Pattern_Count;
+         Put_Line ("Search with 200 patterns in: " &
+                  Duration'Image (To_Duration (End_Time - Start_Time)) &
+                  " seconds");
+
+         Assert (To_Duration (End_Time - Start_Time) < 0.001,
+               "High pattern count - search under 1ms");
+      end;
+   end Test_High_Pattern_Count;
 
    -------------------------------------------------------------------------
    --  Test_Security_Evasion_Resistance
@@ -905,7 +908,7 @@ begin
    Basic_Test_3;
    Test_Mixed_Case_Patterns;
    Test_Performance_vs_Naive;
-   --  Test_High_Pattern_Count;
+   Test_High_Pattern_Count;
    Test_Security_Evasion_Resistance;
    Test_Memory_Safety;
    Test_Position_Modifiers_Basic;
