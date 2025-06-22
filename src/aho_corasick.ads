@@ -11,9 +11,12 @@
 --  SPDX-License-Identifier: MIT
 -------------------------------------------------------------------------------
 with Ada.Strings.Text_Buffers;
-with SPARK;
 
 package Aho_Corasick with SPARK_Mode is
+
+   --  Arbitrary limits, necessary for compile-time verification.
+   Max_Pattern_Length     : constant Positive := 1024;
+   Max_Number_Of_Patterns : constant Positive := 65535;
 
    --  Use single matrix to store transitions, failures, and outputs
    --  One row per state, one column per char, one for failure, and then
@@ -80,7 +83,8 @@ package Aho_Corasick with SPARK_Mode is
       Within   : Integer_Option := (O => None);
    end record with Dynamic_Predicate =>
       (Pattern /= null and then
-       Pattern'Length > 0);
+       Pattern'Length > 0 and then
+       Pattern'Length <= Max_Pattern_Length);
 
    type Enhanced_Pattern_Access is access constant Enhanced_Pattern;
 
@@ -99,7 +103,11 @@ package Aho_Corasick with SPARK_Mode is
 
    function Get_Max_States (Patterns : Pattern_Array;
                             Nocase   : Case_Sensitivity)
-      return Positive with SPARK_Mode;
+      return Positive
+   with SPARK_Mode,
+      Pre =>
+         Patterns'Length > 0 and then
+         Patterns'Length <= Pattern_Array_Index'Last;
 
    ----------------------------------------------------------------------------
    --  Automatons sub-package
@@ -113,8 +121,8 @@ package Aho_Corasick with SPARK_Mode is
       CI_Max_States : constant Natural :=
          Get_Max_States (Patterns, Case_Insensitive);
 
-      --  0-255 for chars + 1 for failure + patterns
-      Num_Cols : constant Natural := 255 + 1 + Patterns'Length;
+      --  256 chars + 1 for failure + patterns
+      Num_Cols : constant Natural := 256 + 1 + Patterns'Length;
 
       --  Column indices for the automaton matrices
       type Column_Idx is new Natural range 0 .. Num_Cols - 1;
@@ -201,8 +209,19 @@ package Aho_Corasick with SPARK_Mode is
       procedure Find_Matches (T        : in out Automaton;
                               Patterns : Pattern_Array;
                               Matches  : in out Match_Array;
-                              Text     : String) with SPARK_Mode;
+                              Text     : String) with SPARK_Mode,
+         Pre => Matches'Length = Patterns'Length and then
+                Matches'First  = Patterns'First and then
+                Matches'Last   = Patterns'Last;
 
+      -------------------------------------------------------------------------
+      --  Reset
+      --  This procedure resets the automaton states and indices.
+      --  @note This does not reinitialize the automaton matrices, it only
+      --   resets the current state and stream index.
+      --  @param T The automaton to reset.
+      -------------------------------------------------------------------------
+      procedure Reset (T : in out Automaton) with SPARK_Mode;
    end Automatons;
 
 end Aho_Corasick;
