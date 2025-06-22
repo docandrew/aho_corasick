@@ -19,7 +19,6 @@ project Aho_Corasick is
    package Compiler is
       for Default_Switches ("Ada") use Aho_Corasick_Config.Ada_Compiler_Switches &
         ("-gnat2022"
-         ,"-O3"
          ,"-gnatX");
    end Compiler;
 
@@ -33,8 +32,7 @@ project Aho_Corasick is
 
    package Prove is
       for Proof_Switches ("Ada") use (
-         "--level=2"
-         ,"-j0"
+         "-j0"
       );
    end Prove;
 

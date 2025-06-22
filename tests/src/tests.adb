@@ -8,11 +8,14 @@
 --
 --  SPDX-License-Identifier: MIT
 -------------------------------------------------------------------------------
-with Ada.Real_Time; use Ada.Real_Time;
-with Aho_Corasick; use Aho_Corasick;
-with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Exceptions; use Ada.Exceptions;
+with Ada.Real_Time;  use Ada.Real_Time;
+with Aho_Corasick;   use Aho_Corasick;
+with Ada.Text_IO;    use Ada.Text_IO;
+with GNAT.Traceback.Symbolic;
 
 procedure Tests is
+   
    Success_Count : Natural := 0;
    Total_Tests   : Natural := 0;
 
@@ -54,6 +57,29 @@ procedure Tests is
               "Integer_Option 4 compared correctly");
    end Test_Integer_Options;
 
+   procedure Test_State_Counting is
+      --  Test state counting functionality
+      Patterns : constant Pattern_Array (1 .. 3) :=
+        [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
+         new Enhanced_Pattern'(Pattern => new String'("def"), others => <>),
+         new Enhanced_Pattern'(Pattern => new String'("ghi"), others => <>)];
+      
+      Max_States : constant Natural :=
+         Get_Max_States (Patterns, Case_Sensitive);
+   begin
+      Put_Line ("=== Testing State Counting ===");
+
+      Put_Line ("Max states for 3 patterns: " & Max_States'Image);
+      Assert (Max_States = 10, "Max states for 3 patterns is 10");
+
+      --  Check if the state count matches expected values
+      --  For 3 patterns, we expect:
+      --  - 'abc' adds 3 states (a, b, c)
+      --  - 'def' adds 3 more states (d, e, f)
+      --  - 'ghi' adds 3 more states (g, h, i)
+      --  - Plus the root state
+   end Test_State_Counting;
+
    ----------------------------------------------------------------------------
    --  Test case 1: Simple pattern matching
    ----------------------------------------------------------------------------
@@ -61,13 +87,17 @@ procedure Tests is
       Patterns : constant Aho_Corasick.Pattern_Array (1 .. 2) :=
         [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
          new Enhanced_Pattern'(Pattern => new String'("def"), others => <>)];
-      T : Aho_Corasick.Automaton := Aho_Corasick.Build_Automaton (Patterns);
-      Matches  : Aho_Corasick.Match_Array (Patterns'Range);
+      Matches  : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
+      T : Automaton := Build_Automaton (Patterns);
       Text     : constant String := "abcdefghi";
    begin
       Put_Line ("=== Testing Basic Pattern Matching ===");
 
-      Aho_Corasick.Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -93,14 +123,17 @@ procedure Tests is
          new Enhanced_Pattern'(Pattern => new String'("dEf"),
                                Nocase  => Case_Insensitive,
                                others => <>)];
-
-      T : Aho_Corasick.Automaton := Aho_Corasick.Build_Automaton (Patterns);
       Matches  : Aho_Corasick.Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
+      T : Automaton := Build_Automaton (Patterns);
       Text     : constant String := "abcdefghi";
    begin
       Put_Line ("=== Testing Case-Insensitive Patterns ===");
 
-      Aho_Corasick.Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -125,13 +158,17 @@ procedure Tests is
         [new Enhanced_Pattern'(Pattern => new String'("xyz"),
                                Nocase  => Case_Sensitive,
                                others => <>)];
-      T : Aho_Corasick.Automaton := Aho_Corasick.Build_Automaton (Patterns);
       Matches  : Aho_Corasick.Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
+      T : Automaton := Build_Automaton (Patterns);
       Text     : constant String := "abcdefabc";
    begin
       Put_Line ("=== Testing No Matches ===");
 
-      Aho_Corasick.Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -155,14 +192,19 @@ procedure Tests is
       Patterns : constant Aho_Corasick.Pattern_Array (1 .. 1) :=
         [new Enhanced_Pattern'(Pattern => new String'("xyz"),
                                others => <>)];
-      T : Aho_Corasick.Automaton := Aho_Corasick.Build_Automaton (Patterns);
       Matches  : Aho_Corasick.Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
+      T : Automaton := Build_Automaton (Patterns);
+
       Text     : constant String := "abcdefabcx";
       Text2    : constant String := "yzabcdefabc";
    begin
       Put_Line ("=== Testing Matches after streaming ===");
 
-      Aho_Corasick.Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -179,7 +221,7 @@ procedure Tests is
               "No matches found in Basic_Test_3 before streaming");
 
       --  Now find matches in the updated text
-      Aho_Corasick.Find_Matches (T, Patterns, Matches, Text2);
+      Find_Matches (T, Patterns, Matches, Text2);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -208,14 +250,17 @@ procedure Tests is
          new Enhanced_Pattern'(Pattern => new String'("dEf"),
                                Nocase  => Case_Sensitive,
                                others => <>)];
-
-      T : Aho_Corasick.Automaton := Aho_Corasick.Build_Automaton (Patterns);
       Matches  : Aho_Corasick.Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
+      T : Automaton := Build_Automaton (Patterns);
       Text     : constant String := "abcdEfghi";
    begin
       Put_Line ("=== Testing Mixed Case Patterns ===");
 
-      Aho_Corasick.Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -237,6 +282,7 @@ procedure Tests is
    --  Compare against naive string search for performance validation
    ----------------------------------------------------------------------------
    procedure Test_Performance_vs_Naive is
+
       --  Large text simulation (network packet payload)
       Text : constant String := [1 .. 8192 => 'A'] &
                                 "GET /admin/config.php?cmd=ls" &
@@ -273,9 +319,12 @@ procedure Tests is
             Nocase => Case_Sensitive,
             others => <>)
          ];
+      Matches : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
-      Matches : Match_Array (1 .. 20);
 
       Start_Time, End_Time : Time;
       AC_Duration : Time_Span;
@@ -348,10 +397,13 @@ procedure Tests is
 
       Pattern_Ptrs : constant Pattern_Array (1 .. 200) := [for J in 1 .. 200 =>
          Make_Pattern (J)];
+      Matches : Match_Array (Pattern_Ptrs'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Pattern_Ptrs);
+      use Matcher;
 
       Text : constant String :=
          "This text contains pattern050 and pattern150 to test";
-      Matches : Match_Array (1 .. 50);
 
       Start_Time, End_Time : Time;
    begin
@@ -408,8 +460,11 @@ procedure Tests is
              others => <>)
          ];
 
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
       A : Automaton := Build_Automaton (Patterns);
-      Matches : Match_Array (1 .. 10);
+      Matches : Match_Array (Patterns'Range);
 
       --  Various evasion attempts
       Evasion1 : constant String :=
@@ -477,9 +532,12 @@ procedure Tests is
           others => <>);
       Patterns : constant Pattern_Array := [
          1 => EPattern1'Unchecked_Access];
+      Matches : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
-      Matches : Match_Array (1 .. 5);
 
       --  Test with various edge cases
       Empty_Text : constant String := "";
@@ -532,9 +590,12 @@ procedure Tests is
             Distance => 6,            --  At least 5 bytes after previous match
             others => <>)
          ];
+      Matches : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
-      Matches : Match_Array (1 .. 10);
 
       --  Valid HTTP request structure
       Valid_Text : constant String := "GET /page HTTP/1.1" & ASCII.CR &
@@ -625,9 +686,12 @@ procedure Tests is
             Distance => 3,             --  At least 3 bytes after MIDDLE
             others => <>)
          ];
+      Matches : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
-      Matches : Match_Array (1 .. 10);
 
       --  Split across streaming chunks
       Chunk1 : constant String := "START data here ";
@@ -714,9 +778,12 @@ procedure Tests is
             Within   => 30,            --  Within 30 bytes of FROM
             others => <>)
          ];
+      Matches : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
-      Matches : Match_Array (1 .. 10);
 
       --  Valid SQL injection attempt
       Attack_Text : constant String :=
@@ -797,9 +864,12 @@ procedure Tests is
             Distance => 0,             --  Exactly at previous match end
             others => <>)
          ];
+      Matches : Match_Array (Patterns'Range);
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
-      Matches : Match_Array (1 .. 10);
 
       --  Edge case: patterns adjacent
       Adjacent_Text : constant String := "AB";
@@ -831,6 +901,7 @@ procedure Tests is
 begin
 
    Test_Integer_Options;
+   Test_State_Counting;
    Basic_Test_1;
    Basic_Test_1_Nocase;
    Basic_Test_2;
@@ -852,4 +923,9 @@ begin
       Put_Line ("Some tests failed. Check the output for details.");
    end if;
 
+exception
+   when E : others =>
+      Put_Line ("An unexpected error occurred: " & Exception_Message (E));
+      Put_Line ("Traceback: " &
+         GNAT.Traceback.Symbolic.Symbolic_Traceback (E));
 end Tests;

@@ -15,16 +15,12 @@ with SPARK.Containers.Formal.Doubly_Linked_Lists;
 
 package body Aho_Corasick with SPARK_Mode is
 
-   package Queue_Package is
-      new SPARK.Containers.Formal.Doubly_Linked_Lists
-        (Element_Type => Integer);
-
    ----------------------------------------------------------------------------
    --  From_Integer
    --  Ada 2022 integer literal to an Integer_Option.
    ----------------------------------------------------------------------------
    function From_Integer (S : String) return Integer_Option is
-      ((O => Just, Value => Integer'Value (S))) with SPARK_Mode;
+      ((O => Just, Value => Integer'Value (S))) with SPARK_Mode => Off;
 
    ----------------------------------------------------------------------------
    --  Integer_Option_Image
@@ -68,19 +64,25 @@ package body Aho_Corasick with SPARK_Mode is
 
    ----------------------------------------------------------------------------
    --  Sum_Lengths
-   --  This function computes the sum of lengths of all case-sensitive or
-   --  case-insensitive patterns in the array, giving us the total number of
-   --  states needed in the automaton.
+   --  Compute the sum of lengths of all case-sensitive OR case-insensitive
+   --  patterns in the array, giving us the total number of states needed in
+   --  the automaton.
    ----------------------------------------------------------------------------
    function Sum_Lengths (Patterns : Pattern_Array;
                          Nocase   : Case_Sensitivity) return Natural
       with SPARK_Mode,
-      Pre => Patterns'Length > 0 and then
-         (for all P of Patterns => P /= null) and then
-         (for all P of Patterns => P.Pattern /= null) and then
-         (for all P of Patterns => P.Pattern'Length > 0) and then
-         (for all P of Patterns => P.Pattern'Length <= Max_Pattern_Length),
-      Post => Sum_Lengths'Result <= Integer'Last - 1
+         Pre => Patterns'Length > 0 and then
+               Patterns'Length <= Max_Number_Of_Patterns and then
+               (for all I in Patterns'Range =>
+                  Patterns (I) /= null and then
+                  Patterns (I).Pattern /= null and then
+                  Patterns (I).Pattern'Length > 0 and then
+                  Patterns (I).Pattern'Length <= Max_Pattern_Length),
+         Post => Sum_Lengths'Result <= Integer'Last - 1;
+
+   function Sum_Lengths (Patterns : Pattern_Array;
+                         Nocase   : Case_Sensitivity) return Natural
+      with SPARK_Mode
    is
       Result : Natural := 0;
    begin
@@ -90,6 +92,7 @@ package body Aho_Corasick with SPARK_Mode is
          pragma Loop_Invariant (I - Patterns'First + 1 <=
             Integer (Patterns'Length));
 
+         --  Only count patterns that match the specified case-sensitivity
          if Patterns (I).Nocase = Nocase then
             Result := Result + Patterns (I).Pattern'Length;
          end if;
@@ -100,536 +103,1089 @@ package body Aho_Corasick with SPARK_Mode is
 
    ----------------------------------------------------------------------------
    --  Get_Max_States
-   --  This function computes the maximum number of states needed for the
-   --  automaton based on the sum of lengths of the patterns.
+   --  Compute the maximum number of states needed for the automaton based on
+   --  the sum of lengths of the patterns.
    ----------------------------------------------------------------------------
    function Get_Max_States (Patterns : Pattern_Array;
                             Nocase   : Case_Sensitivity)
-      return Natural
-      with SPARK_Mode,
-         Pre => Patterns'Length > 0
+      return Positive with SPARK_Mode
    is
    begin
-      if Patterns'Length = 0 then
-         return 0;
-      end if;
-
-      return Sum_Lengths (Patterns, Nocase) + 1; --  +1 for the initial state
+      return Sum_Lengths (Patterns, Nocase) + 1; --  +1 for initial state
    end Get_Max_States;
 
    ----------------------------------------------------------------------------
-   --  Add_Pattern_to_State
-   --  This procedure adds a pattern index to the state output, ensuring that
-   --  we do not exceed the maximum number of overlapping patterns.
-   --  If the maximum is exceeded, it sets the Overloaded flag to True.
+   --  Automatons sub-package
    ----------------------------------------------------------------------------
-   procedure Add_Pattern_to_State (Outputs       : in out State_Output;
-                                   Pattern_Index : Positive;
-                                   Overloaded    : out Boolean)
-      with SPARK_Mode
-   is
-   begin
-      --  Check if we have room for another pattern
-      if Outputs.Count < Outputs.Matched_Patterns'Length then
-         Outputs.Count := Outputs.Count + 1;
-         Outputs.Matched_Patterns (Outputs.Count) := Pattern_Index;
-         Overloaded := False;
-      else
-         --  Too many overlapping patterns
-         Overloaded := True;
-      end if;
-   end Add_Pattern_to_State;
+   package body Automatons is
+      -------------------------------------------------------------------------
+      --  Column
+      --  Helper to get index of a column in the character part of the matrix
+      -------------------------------------------------------------------------
+      function Column (C : Character) return Column_Idx is
+         (Column_Idx (Character'Pos (C))) with Inline, SPARK_Mode;
 
-   ----------------------------------------------------------------------------
-   --  Merge_Outputs
-   --  This procedure merges the outputs of two state outputs, ensuring that
-   --  no duplicate patterns are added to the destination state output.
-   ----------------------------------------------------------------------------
-   procedure Merge_Outputs (Dest       : in out State_Output;
-                            Source     : State_Output;
-                            Overloaded : out Boolean)
-      with SPARK_Mode
-   is
-   begin
-      Overloaded := False;
-      for I in 1 .. Source.Count loop
-         declare
-            Pattern_Index : constant Positive := Source.Matched_Patterns (I);
-            Found : Boolean := False;
-         begin
-            --  Check if the pattern is already in the destination state
-            for J in 1 .. Dest.Count loop
-               pragma Loop_Invariant (Dest.Count <= Max_Overlapping_Patterns);
-               if Dest.Matched_Patterns (J) = Pattern_Index then
-                  Found := True;
-                  exit;
+      -------------------------------------------------------------------------
+      --  Column
+      --  Helper to get index of a column in the output part of the matrix
+      -------------------------------------------------------------------------
+      function Column (Pattern_Idx : Pattern_Array_Index) return Column_Idx is
+         (Output_Start_Idx + Column_Idx (Pattern_Idx) - 1)
+      with Inline, SPARK_Mode,
+            Pre => Pattern_Idx in 1 .. Patterns'Length and then
+                   Column_Idx (Pattern_Idx) <= Column_Idx'Last;
+
+      -------------------------------------------------------------------------
+      --  Helper functions for the automaton matrices
+      -------------------------------------------------------------------------
+      procedure Set_CS_Character_Transition (
+         Matrix     : in out CS_Matrix;
+         From_State : CS_State;
+         Char       : Character;
+         To_State   : CS_State)
+      with SPARK_Mode,
+         Post =>
+            Matrix (From_State, Column (Char)) /= CS_No_State
+         and then
+            Matrix (From_State, Column (Char)) = To_State;
+
+      procedure Set_CS_Character_Transition (
+         Matrix     : in out CS_Matrix;
+         From_State : CS_State;
+         Char       : Character;
+         To_State   : CS_State) with SPARK_Mode
+      is
+         Col : constant Column_Idx := Column_Idx (Char_To_Index (Char));
+      begin
+         Matrix (From_State, Col) := To_State;
+      end Set_CS_Character_Transition;
+
+      -------------------------------------------------------------------------
+      --  Set_CI_Character_Transition
+      -------------------------------------------------------------------------
+      procedure Set_CI_Character_Transition (
+         Matrix     : in out CI_Matrix;
+         From_State : CI_State;
+         Char       : Character;
+         To_State   : CI_State)
+      with SPARK_Mode,
+         Post =>
+            Matrix (From_State, Column (To_Lower (Char))) /= CI_No_State
+         and then
+            Matrix (From_State, Column (To_Lower (Char))) = To_State;
+
+      procedure Set_CI_Character_Transition (
+         Matrix     : in out CI_Matrix;
+         From_State : CI_State;
+         Char       : Character;
+         To_State   : CI_State) with SPARK_Mode
+      is
+         Col : constant Column_Idx := Column_Idx (
+               Char_To_Index (To_Lower (Char)));
+      begin
+         Matrix (From_State, Col) := To_State;
+      end Set_CI_Character_Transition;
+
+      -------------------------------------------------------------------------
+      --  Set_CS_Failure_Link
+      -------------------------------------------------------------------------
+      procedure Set_CS_Failure_Link (
+         Matrix     : in out CS_Matrix;
+         From_State : CS_State;
+         To_State   : CS_State)
+      with SPARK_Mode,
+         Post =>
+            Matrix (From_State, Failure_Idx) /= CS_No_State
+         and then
+            Matrix (From_State, Failure_Idx) = To_State;
+
+      procedure Set_CS_Failure_Link (
+         Matrix     : in out CS_Matrix;
+         From_State : CS_State;
+         To_State   : CS_State) with SPARK_Mode
+      is
+      begin
+         Matrix (From_State, Failure_Idx) := To_State;
+      end Set_CS_Failure_Link;
+
+      -------------------------------------------------------------------------
+      --  Set_CI_Failure_Link
+      -------------------------------------------------------------------------
+      procedure Set_CI_Failure_Link (
+         Matrix     : in out CI_Matrix;
+         From_State : CI_State;
+         To_State   : CI_State)
+      with SPARK_Mode,
+         Post =>
+            Matrix (From_State, Failure_Idx) /= CI_No_State
+         and then
+            Matrix (From_State, Failure_Idx) = To_State;
+
+      procedure Set_CI_Failure_Link (
+         Matrix     : in out CI_Matrix;
+         From_State : CI_State;
+         To_State   : CI_State) with SPARK_Mode
+      is
+      begin
+         Matrix (From_State, Failure_Idx) := To_State;
+      end Set_CI_Failure_Link;
+
+      -------------------------------------------------------------------------
+      --  Set_CS_Pattern_Output
+      -------------------------------------------------------------------------
+      procedure Set_CS_Pattern_Output (
+         Matrix      : in out CS_Matrix;
+         State       : CS_State;
+         Pattern_Idx : Pattern_Array_Index)
+      with SPARK_Mode,
+         Pre => Pattern_Idx in 1 .. Patterns'Length and then
+                Column (Pattern_Idx) <= Column_Idx'Last,
+         Post => Matrix (State, Column (Pattern_Idx)) /= CS_No_State;
+
+      procedure Set_CS_Pattern_Output (
+         Matrix      : in out CS_Matrix;
+         State       : CS_State;
+         Pattern_Idx : Pattern_Array_Index) with SPARK_Mode
+      is
+         Col : constant Column_Idx := Column (Pattern_Idx);
+      begin
+         Matrix (State, Col) := CS_Start_State;
+      end Set_CS_Pattern_Output;
+
+      -------------------------------------------------------------------------
+      --  Set_CI_Pattern_Output
+      -------------------------------------------------------------------------
+      procedure Set_CI_Pattern_Output (
+         Matrix      : in out CI_Matrix;
+         State       : CI_State;
+         Pattern_Idx : Pattern_Array_Index)
+      with SPARK_Mode,
+         Pre => Pattern_Idx in 1 .. Patterns'Length and then
+                Column (Pattern_Idx) <= Column_Idx'Last,
+         Post => Matrix (State, Column (Pattern_Idx)) /= CI_No_State;
+
+      procedure Set_CI_Pattern_Output (
+         Matrix      : in out CI_Matrix;
+         State       : CI_State;
+         Pattern_Idx : Pattern_Array_Index) with SPARK_Mode
+      is
+         Col : constant Column_Idx := Column (Pattern_Idx);
+      begin
+         Matrix (State, Col) := CI_Start_State;
+      end Set_CI_Pattern_Output;
+
+      -------------------------------------------------------------------------
+      --  Get_CS_Character_Transition
+      --  This function retrieves the character transition for a given state
+      --  and character in the case-sensitive automaton.
+      -------------------------------------------------------------------------
+      function Get_CS_Character_Transition (
+         Matrix     : CS_Matrix;
+         From_State : CS_State;
+         Char       : Character) return CS_State_Extended
+         is (Matrix (From_State, Column_Idx (Character'Pos (Char))))
+      with SPARK_Mode;
+
+      -------------------------------------------------------------------------
+      --  Get_CI_Character_Transition
+      -------------------------------------------------------------------------
+      function Get_CI_Character_Transition (
+         Matrix     : CI_Matrix;
+         From_State : CI_State;
+         Char       : Character) return CI_State_Extended
+         is (Matrix (From_State, Column_Idx (Character'Pos (Char))))
+      with SPARK_Mode;
+
+      -------------------------------------------------------------------------
+      --  Get_CS_Failure_Link
+      --  This function retrieves the failure link for a given state in the
+      --  case-sensitive automaton.
+      -------------------------------------------------------------------------
+      function Get_CS_Failure_Link (
+         Matrix     : CS_Matrix;
+         From_State : CS_State) return CS_State_Extended
+            is (Matrix (From_State, Failure_Idx))
+         with SPARK_Mode,
+            Pre => Matrix (From_State, Failure_Idx) /= CS_No_State,
+            Post => Get_CS_Failure_Link'Result in CS_State_Extended'Range;
+
+      -------------------------------------------------------------------------
+      --  Get_CI_Failure_Link
+      -------------------------------------------------------------------------
+      function Get_CI_Failure_Link (
+         Matrix     : CI_Matrix;
+         From_State : CI_State) return CI_State_Extended
+            is (Matrix (From_State, Failure_Idx))
+         with SPARK_Mode,
+            Pre => Matrix (From_State, Failure_Idx) /= CI_No_State,
+            Post => Get_CI_Failure_Link'Result in CI_State_Extended'Range;
+
+      -------------------------------------------------------------------------
+      --
+      --  Trie-building functions
+      --
+      -------------------------------------------------------------------------
+
+      -------------------------------------------------------------------------
+      --  Insert_CS_Pattern
+      --  Insert a single case-sensitive pattern into the automaton.
+      --  @param Matrix The case-sensitive automaton matrix.
+      --  @param Pattern The pattern to insert.
+      --  @param Pattern_Idx The index of the pattern in the Patterns array.
+      --  @param Next_Available_State The next available state in the automaton
+      --  @param Final_State The final state after inserting the pattern.
+      -------------------------------------------------------------------------
+      procedure Insert_CS_Pattern (
+         Matrix                : in out CS_Matrix;
+         Pattern               : String;
+         Pattern_Idx           : Pattern_Array_Index;
+         Next_Available_State  : in out CS_State)
+         with SPARK_Mode,
+            Pre =>
+               Pattern_Idx in 1 .. Patterns'Length and then
+               Pattern'Length > 0 and then
+               Next_Available_State + CS_State (Pattern'Length)
+                  <= CS_State'Last,
+            Post =>
+               Next_Available_State <= Next_Available_State'Old +
+                  CS_State (Pattern'Length);
+
+      procedure Insert_CS_Pattern (
+         Matrix                : in out CS_Matrix;
+         Pattern               : String;
+         Pattern_Idx           : Pattern_Array_Index;
+         Next_Available_State  : in out CS_State) with SPARK_Mode
+      is
+         Current_State : CS_State := CS_Start_State;
+      begin
+         for I in Pattern'Range loop
+            declare
+               Char : constant Character := Pattern (I);
+               Existing_Transition : constant CS_State_Extended :=
+                  Get_CS_Character_Transition (Matrix,
+                                               Current_State,
+                                               Char);
+            begin
+               if Existing_Transition /= CS_No_State then
+                  --  Transition already exists, reuse it.
+                  Current_State := CS_State (Existing_Transition);
+               else
+                  --  Create a new transition for this character
+                  pragma Assert (Next_Available_State < CS_State'Last);
+
+                  Next_Available_State := Next_Available_State + 1;
+
+                  Set_CS_Character_Transition (Matrix,
+                                               Current_State,
+                                               Char,
+                                               Next_Available_State);
+
+                  Current_State := Next_Available_State;
                end if;
+            end;
+         end loop;
+
+         --  Mark this state as matching the pattern
+         Set_CS_Pattern_Output (Matrix, Current_State, Pattern_Idx);
+      end Insert_CS_Pattern;
+
+      -------------------------------------------------------------------------
+      --  Insert_CI_Pattern
+      --  Insert a single case-insensitive pattern into the automaton.
+      --  @param Matrix The case-insensitive automaton matrix.
+      --  @param Pattern The pattern to insert.
+      --  @param Pattern_Idx The index of the pattern in the Patterns array.
+      --  @param Next_Available_State The next available state in the automaton
+      -------------------------------------------------------------------------
+      procedure Insert_CI_Pattern (
+         Matrix                : in out CI_Matrix;
+         Pattern               : String;
+         Pattern_Idx           : Pattern_Array_Index;
+         Next_Available_State  : in out CI_State)
+         with SPARK_Mode,
+            Pre =>
+               Pattern_Idx in 1 .. Patterns'Length and then
+               Pattern'Length > 0 and then
+               Next_Available_State + CI_State (Pattern'Length)
+                  <= CI_State'Last,
+            Post =>
+               Next_Available_State <= Next_Available_State'Old +
+                  CI_State (Pattern'Length);
+
+      procedure Insert_CI_Pattern (
+         Matrix                : in out CI_Matrix;
+         Pattern               : String;
+         Pattern_Idx           : Pattern_Array_Index;
+         Next_Available_State  : in out CI_State) with SPARK_Mode
+      is
+         Current_State : CI_State := CI_Start_State;
+      begin
+         for I in Pattern'Range loop
+            declare
+               Char : constant Character := To_Lower (Pattern (I));
+               Existing_Transition : constant CI_State_Extended :=
+                  Get_CI_Character_Transition (Matrix,
+                                               Current_State,
+                                               Char);
+            begin
+               if Existing_Transition /= CI_No_State then
+                  --  Transition already exists, reuse it.
+                  Current_State := CI_State (Existing_Transition);
+               else
+                  --  Create a new transition for this character
+                  pragma Assert (Next_Available_State < CI_State'Last);
+
+                  Next_Available_State := Next_Available_State + 1;
+
+                  Set_CI_Character_Transition (Matrix,
+                                               Current_State,
+                                               Char,
+                                               Next_Available_State);
+
+                  Current_State := Next_Available_State;
+               end if;
+            end;
+         end loop;
+
+         --  Mark this state as matching the pattern
+         Set_CI_Pattern_Output (Matrix, Current_State, Pattern_Idx);
+      end Insert_CI_Pattern;
+
+      -------------------------------------------------------------------------
+      --  Build_CS_Trie
+      --  This function builds the case-sensitive trie for the automaton
+      --  based on the provided patterns.
+      -------------------------------------------------------------------------
+      procedure Build_CS_Trie (Matrix   : in out CS_Matrix;
+                               Patterns : Pattern_Array)
+         with SPARK_Mode,
+            Pre =>
+               (for all I in Patterns'Range =>
+                  Patterns (I) /= null and then
+                  Patterns (I).Pattern /= null and then
+                  Patterns (I).Pattern'Length > 0);
+
+      procedure Build_CS_Trie (Matrix   : in out CS_Matrix;
+                               Patterns : Pattern_Array) with SPARK_Mode
+      is
+         Next_State : CS_State := CS_Start_State;
+      begin
+         for I in Patterns'Range loop
+            pragma Loop_Invariant (Next_State >= 1);
+            pragma Loop_Invariant (Next_State <= CS_State'Last);
+
+            if Patterns (I).Nocase = Case_Sensitive then
+               Insert_CS_Pattern (Matrix,
+                                  Patterns (I).Pattern.all,
+                                  I,
+                                  Next_State);
+            end if;
+         end loop;
+      end Build_CS_Trie;
+
+      -------------------------------------------------------------------------
+      --  Build_CI_Trie
+      --  This function builds the case-sensitive trie for the automaton
+      --  based on the provided patterns.
+      -------------------------------------------------------------------------
+      procedure Build_CI_Trie (Matrix   : in out CI_Matrix;
+                               Patterns : Pattern_Array)
+         with SPARK_Mode,
+            Pre =>
+               (for all I in Patterns'Range =>
+                  Patterns (I) /= null and then
+                  Patterns (I).Pattern /= null and then
+                  Patterns (I).Pattern'Length > 0);
+
+      procedure Build_CI_Trie (Matrix   : in out CI_Matrix;
+                               Patterns : Pattern_Array) with SPARK_Mode
+      is
+         Next_State : CI_State := CI_Start_State;
+      begin
+         for I in Patterns'Range loop
+            pragma Loop_Invariant (Next_State >= 1);
+            pragma Loop_Invariant (Next_State <= CI_State'Last);
+
+            if Patterns (I).Nocase = Case_Insensitive then
+               Insert_CI_Pattern (Matrix,
+                                  Patterns (I).Pattern.all,
+                                  I,
+                                  Next_State);
+            end if;
+         end loop;
+      end Build_CI_Trie;
+
+      -------------------------------------------------------------------------
+      --  Build_CS_Failure_Links
+      -------------------------------------------------------------------------
+      procedure Build_CS_Failure_Links (Matrix : in out CS_Matrix)
+         with SPARK_Mode
+      is
+         package Queue_Package is new
+            SPARK.Containers.Formal.Doubly_Linked_Lists (
+               Element_Type => CS_State);
+         use Queue_Package;
+
+         Queue : Queue_Package.List (
+            Capacity => Ada.Containers.Count_Type (CS_Max_States));
+
+         ----------------------------------------------------------------------
+         --  Initialize_Depth1_Failure_Links
+         --  This procedure initializes the failure links for depth 1 states
+         --  in the case-sensitive automaton. It sets the failure links for
+         --  all characters that have transitions from the start state.
+         ----------------------------------------------------------------------
+         procedure Initialize_Depth1_Failure_Links (Matrix : in out CS_Matrix)
+         with
+            Pre => Queue.Is_Empty and then
+                   Matrix'Length (1) = CS_Max_States and then
+                   Matrix (CS_Start_State, Failure_Idx) = CS_No_State;
+
+         procedure Initialize_Depth1_Failure_Links (Matrix : in out CS_Matrix)
+         is
+         begin
+            for C in Character'Range loop
+               declare
+                  T : constant CS_State_Extended :=
+                     Get_CS_Character_Transition (
+                        Matrix     => Matrix,
+                        From_State => CS_Start_State,
+                        Char       => C);
+               begin
+                  if T /= CS_No_State then
+                     Set_CS_Failure_Link (Matrix,
+                                          CS_State (T),
+                                          CS_Start_State);
+                     Queue.Append (T);
+                  end if;
+               end;
+            end loop;
+         end Initialize_Depth1_Failure_Links;
+
+         -------------------------------------------------------------------
+         --  Find_Failure_Link
+         --  This function finds the failure link for a given state and
+         --  character, updating the matrix accordingly.
+         -------------------------------------------------------------------
+         procedure Find_Failure_Link (
+            Matrix        : in out CS_Matrix;
+            From_State    : CS_State;
+            To_State      : CS_State;
+            Char          : Character)
+         with
+            Pre =>
+               Matrix (From_State, Failure_Idx) /= CS_No_State,
+            Post =>
+               Matrix (To_State, Failure_Idx) /= CS_No_State;
+
+         procedure Find_Failure_Link (
+            Matrix        : in out CS_Matrix;
+            From_State    : CS_State;
+            To_State      : CS_State;
+            Char          : Character)
+         is
+            B : CS_State := Get_CS_Failure_Link (Matrix, From_State);
+            Found_Failure : Boolean := False;
+         begin
+            --  Follow failure links until we find a valid transition
+            --  or reach the start state. For provability, we will bound the
+            --  loop by the maximum possible states
+            for I in 1 .. CS_State'Last loop
+               exit when B = CS_Start_State or else Found_Failure;
+
+               declare
+                  BT : constant CS_State_Extended :=
+                     Get_CS_Character_Transition (
+                        Matrix     => Matrix,
+                        From_State => B,
+                        Char       => Char);
+               begin
+                  if BT /= CS_No_State then
+                     --  Found a valid transition
+                     Set_CS_Failure_Link (Matrix, To_State, CS_State (BT));
+                     Found_Failure := True;
+                  else
+                     --  Follow the failure link to the next state
+                     B := Get_CS_Failure_Link (Matrix, B);
+                  end if;
+               end;
             end loop;
 
-            --  Add if not duplicated and we have room
-            if not Found then
+            if not Found_Failure then
+               --  We either reached root (B = CS_Start_State) or hit
+               --  iteration limit. In both cases, check if root has a
+               --  transition on this character. This should never happen.
                declare
-                  Local_Overloaded : Boolean;
+                  Root_Trans : constant CS_State_Extended :=
+                     Get_CS_Character_Transition (
+                        Matrix, CS_Start_State, Char);
                begin
-                  Add_Pattern_to_State (Dest, Pattern_Index, Local_Overloaded);
-                  if Local_Overloaded then
-                     Overloaded := True;
+                  if Root_Trans /= CS_No_State then
+                     --  Root has a transition on this character
+                     Set_CS_Failure_Link (
+                        Matrix, To_State, Root_Trans);
+                  else
+                     --  No transition anywhere for this character -
+                     --  failure link points to root
+                     Set_CS_Failure_Link (
+                        Matrix, To_State, CS_Start_State);
                   end if;
                end;
             end if;
-         end;
-      end loop;
-   end Merge_Outputs;
+         end Find_Failure_Link;
 
-   ----------------------------------------------------------------------------
-   --  Build_Trie
-   --  This procedure builds the basic trie structure from patterns, creating
-   --  states and transitions but not failure links.
-   ----------------------------------------------------------------------------
-   procedure Build_Trie (T         : in out Simple_Automaton;
-                         Patterns  : Pattern_Array;
-                         Nocase    : Case_Sensitivity;
-                         States    : in out Natural)
-      with SPARK_Mode
-   is
-   begin
-      --  Build trie for transitions, only for those patterns which match
-      --  the specified case-sensitivity.
+         -------------------------------------------------------------------
+         --  Process_State_For_Failure_Links
+         --  This procedure processes a state to set its failure links
+         --  based on the transitions from its failure link.
+         -------------------------------------------------------------------
+         procedure Process_State_For_Failure_Links (
+            Matrix        : in out CS_Matrix;
+            Current_State : CS_State)
+         with
+            Pre =>
+               not Queue.Is_Empty and then
+               Matrix (Current_State, Failure_Idx) /= CS_No_State;
 
-      declare
-         Initial_States : constant Natural := States with Ghost;
-      begin
-
-         for I in Patterns'Range loop
-
-            if Patterns (I).Nocase = Nocase then
+         procedure Process_State_For_Failure_Links (
+            Matrix        : in out CS_Matrix;
+            Current_State : CS_State) is
+         begin
+            for C in Character'Range loop
                declare
-                  Current_State : State := Start_State;
-                  Pattern : constant access constant String :=
-                     Patterns (I).Pattern;
-                  Overload : Boolean;
+                  T : constant CS_State_Extended :=
+                     Get_CS_Character_Transition (
+                        Matrix     => Matrix,
+                        From_State => Current_State,
+                        Char       => C);
                begin
-                  --  Insert each character of the pattern into the trie
-                  for C of Pattern.all loop
-                     --  Create new state if necessary. If this pattern is
-                     --  case-insensitive, normalize to lowercase.
-                     declare
-                        CN : constant Character :=
-                           (if Nocase = Case_Insensitive then
-                              To_Lower (C)
-                           else C);
-                     begin
-                        if T.Transitions (Current_State, CN) = No_State then
-                           States := States + 1;
-                           T.Transitions (Current_State, CN) := States;
-                        end if;
+                  if T /= CS_No_State then
+                     --  Found next state, compute its failure link
+                     Find_Failure_Link (
+                        Matrix, Current_State, T, C);
 
-                        Current_State := T.Transitions (Current_State, CN);
-                     end;
-                  end loop;
-
-                  --  Add current word in output links
-                  Add_Pattern_to_State (
-                     T.Outputs (Current_State), I, Overload);
-
-                  if Overload then
-                     T.Overloaded := True;
+                     --  Add the next state to the queue for processing
+                     Queue.Append (T);
                   end if;
                end;
+            end loop;
+         end Process_State_For_Failure_Links;
+
+      begin
+         Queue.Clear;
+         Initialize_Depth1_Failure_Links (Matrix);
+
+         while not Queue.Is_Empty loop
+            declare
+               Current_State : constant CS_State := Queue.First_Element;
+            begin
+               pragma Assert (not Queue.Is_Empty);
+
+               Queue.Delete_First;
+               Process_State_For_Failure_Links (Matrix, Current_State);
+            end;
+         end loop;
+      end Build_CS_Failure_Links;
+
+      -------------------------------------------------------------------------
+      --  Build_CI_Failure_Links
+      -------------------------------------------------------------------------
+      procedure Build_CI_Failure_Links (Matrix : in out CI_Matrix)
+      is
+         package Queue_Package is new
+            SPARK.Containers.Formal.Doubly_Linked_Lists (
+               Element_Type => CI_State);
+         use Queue_Package;
+
+         Queue : Queue_Package.List (
+            Capacity => Ada.Containers.Count_Type (CI_Max_States));
+
+         ----------------------------------------------------------------------
+         --  Initialize_Depth1_Failure_Links
+         ----------------------------------------------------------------------
+         procedure Initialize_Depth1_Failure_Links (Matrix : in out CI_Matrix)
+         with
+            Pre => Queue.Is_Empty and then
+                   Matrix'Length (1) = CI_Max_States and then
+                   Matrix (CI_Start_State, Failure_Idx) = CI_No_State;
+
+         procedure Initialize_Depth1_Failure_Links (Matrix : in out CI_Matrix)
+         is
+         begin
+            for C in Character'Range loop
+               declare
+                  T : constant CI_State_Extended :=
+                     Get_CI_Character_Transition (
+                        Matrix     => Matrix,
+                        From_State => CI_Start_State,
+                        Char       => C);
+               begin
+                  if T /= CI_No_State then
+                     Set_CI_Failure_Link (
+                        Matrix, CI_State (T), CI_Start_State);
+
+                     Queue.Append (T);
+                  end if;
+               end;
+            end loop;
+         end Initialize_Depth1_Failure_Links;
+
+         -------------------------------------------------------------------
+         --  Find_Failure_Link
+         -------------------------------------------------------------------
+         procedure Find_Failure_Link (
+            Matrix        : in out CI_Matrix;
+            From_State    : CI_State;
+            To_State      : CI_State;
+            Char          : Character)
+         with
+            Pre =>
+               Matrix (From_State, Failure_Idx) /= CI_No_State,
+            Post =>
+               Matrix (To_State, Failure_Idx) /= CI_No_State;
+
+         procedure Find_Failure_Link (
+            Matrix        : in out CI_Matrix;
+            From_State    : CI_State;
+            To_State      : CI_State;
+            Char          : Character)
+         is
+            B : CI_State := Get_CI_Failure_Link (Matrix, From_State);
+            Found_Failure : Boolean := False;
+         begin
+            for I in 1 .. CI_State'Last loop
+               exit when B = CI_Start_State or else Found_Failure;
+
+               declare
+                  BT : constant CI_State_Extended :=
+                     Get_CI_Character_Transition (
+                        Matrix     => Matrix,
+                        From_State => B,
+                        Char       => Char);
+               begin
+                  if BT /= CI_No_State then
+                     Set_CI_Failure_Link (Matrix, To_State, CI_State (BT));
+                     Found_Failure := True;
+                  else
+                     B := Get_CI_Failure_Link (Matrix, B);
+                  end if;
+               end;
+            end loop;
+
+            if not Found_Failure then
+               declare
+                  Root_Trans : constant CI_State_Extended :=
+                     Get_CI_Character_Transition (
+                        Matrix, CI_Start_State, Char);
+               begin
+                  if Root_Trans /= CI_No_State then
+                     Set_CI_Failure_Link (
+                        Matrix, To_State, CI_State (Root_Trans));
+                  else
+                     Set_CI_Failure_Link (
+                        Matrix, To_State, CI_Start_State);
+                  end if;
+               end;
+            end if;
+         end Find_Failure_Link;
+
+         -------------------------------------------------------------------
+         --  Process_State_For_Failure_Links
+         -------------------------------------------------------------------
+         procedure Process_State_For_Failure_Links (
+            Matrix        : in out CI_Matrix;
+            Current_State : CI_State)
+         with
+            Pre =>
+               not Queue.Is_Empty and then
+               Matrix (Current_State, Failure_Idx) /= CI_No_State;
+
+         procedure Process_State_For_Failure_Links (
+            Matrix        : in out CI_Matrix;
+            Current_State : CI_State) is
+         begin
+            for C in Character'Range loop
+               declare
+                  T : constant CI_State_Extended :=
+                     Get_CI_Character_Transition (
+                        Matrix     => Matrix,
+                        From_State => Current_State,
+                        Char       => C);
+               begin
+                  if T /= CI_No_State then
+                     Find_Failure_Link (
+                        Matrix, Current_State, CI_State (T), C);
+
+                     Queue.Append (T);
+                  end if;
+               end;
+            end loop;
+         end Process_State_For_Failure_Links;
+
+      begin
+         Queue.Clear;
+         Initialize_Depth1_Failure_Links (Matrix);
+
+         while not Queue.Is_Empty loop
+            declare
+               Current_State : constant CI_State := Queue.First_Element;
+            begin
+               pragma Assert (not Queue.Is_Empty);
+
+               Queue.Delete_First;
+               Process_State_For_Failure_Links (Matrix, Current_State);
+            end;
+         end loop;
+      end Build_CI_Failure_Links;
+
+      -------------------------------------------------------------------------
+      --  Has_CS_Pattern
+      -------------------------------------------------------------------------
+      function Has_CS_Pattern (Patterns : Pattern_Array)
+         return Boolean with SPARK_Mode is
+      begin
+         for I in Patterns'Range loop
+            if Patterns (I) /= null and then
+               Patterns (I).Nocase = Case_Sensitive
+            then
+               return True;
             end if;
          end loop;
 
-         pragma Assert (States >= Initial_States);
-      end;
-   end Build_Trie;
+         return False;
+      end Has_CS_Pattern;
 
-   ----------------------------------------------------------------------------
-   --  Add_Default_Transitions
-   --  This procedure adds default transitions from state 0 for characters
-   --  that don't have explicit transitions.
-   ----------------------------------------------------------------------------
-   procedure Add_Default_Transitions (T : in out Simple_Automaton)
-      with SPARK_Mode
-   is
-   begin
-      --  Add edge from state 0 to all characters that don't have one already
-      for C in Character'Range loop
+      -------------------------------------------------------------------------
+      --  Has_CI_Pattern
+      -------------------------------------------------------------------------
+      function Has_CI_Pattern (Patterns : Pattern_Array)
+         return Boolean with SPARK_Mode is
+      begin
+         for I in Patterns'Range loop
+            if Patterns (I) /= null and then
+               Patterns (I).Nocase = Case_Insensitive
+            then
+               return True;
+            end if;
+         end loop;
 
-         --  Ensure transition is non-negative
-         if T.Transitions (Start_State, C) = No_State then
-            --  Loop back to start state
-            T.Transitions (Start_State, C) := Start_State;
-         end if;
+         return False;
+      end Has_CI_Pattern;
 
-      end loop;
-   end Add_Default_Transitions;
+      -------------------------------------------------------------------------
+      --  Build_Automaton
+      -------------------------------------------------------------------------
+      function Build_Automaton (Patterns : Pattern_Array) return Automaton
+         with SPARK_Mode is
+      begin
+         return T : Automaton do
+            if Has_CS_Pattern (Patterns) then
+               Build_CS_Trie (T.CS_States, Patterns);
+               Build_CS_Failure_Links (T.CS_States);
+               T.Has_CS := True;
+               T.CS_Current_State := CS_Start_State;
+            end if;
 
-   ----------------------------------------------------------------------------
-   --  Build_Failure_Links
-   --  This procedure builds the failure links using BFS (breadth-first search)
-   --  algorithm for the Aho-Corasick automaton.
-   ----------------------------------------------------------------------------
-   procedure Build_Failure_Links (T      : in out Simple_Automaton;
-                                  States : Natural)
-      with SPARK_Mode, Always_Terminates
-   is
-      Queue : Queue_Package.List (
-         Capacity => Ada.Containers.Count_Type (States + 1));
-      Queue_Size : Natural := 0 with Ghost;
-   begin
-      --  Initialize failure links
-      T.Failures := [others => -1];
+            if Has_CI_Pattern (Patterns) then
+               Build_CI_Trie (T.CI_States, Patterns);
+               Build_CI_Failure_Links (T.CI_States);
+               T.Has_CI := True;
+               T.CI_Current_State := CI_Start_State;
+            end if;
 
-      --  Failure is computed in BFS order using queue
-      --  Take every possible input character
-      for C in Character'Range loop
-         if T.Transitions (0, C) > 0 then
-            --  If there is a transition from the start state,
-            --  add it to the queue
+            T.Initialized := True;
+         end return;
+      end Build_Automaton;
 
-            --  Failure link to start state
-            T.Failures (T.Transitions (0, C)) := 0;
-            Queue.Append (T.Transitions (0, C));
-            Queue_Size := Queue_Size + 1;
-         end if;
-      end loop;
+      -------------------------------------------------------------------------
+      --
+      --  Pattern-Matching
+      --
+      -------------------------------------------------------------------------
 
-      while not Queue.Is_Empty loop
-         pragma Loop_Variant (Decreases => Queue_Size);
-         declare
-            Current_State_Int : constant Integer := Queue.First_Element;
-            Current_State : constant State := Current_State_Int;
-         begin
-            Queue.Delete_First;
-            Queue_Size := Queue_Size - 1;
+      -------------------------------------------------------------------------
+      --  Find_Next_CS_State
+      -------------------------------------------------------------------------
+      function Find_Next_CS_State (
+         Matrix     : CS_Matrix;
+         From_State : CS_State;
+         Char       : Character) return CS_State with SPARK_Mode
+      is
+         State : CS_State_Extended := From_State;
+      begin
+         --  Find a valid transition for the char
+         for I in 1 .. CS_State'Last loop
+            declare
+               T : constant CS_State_Extended :=
+                  Get_CS_Character_Transition (Matrix, State, Char);
+            begin
+               if T /= CS_No_State then
+                  return CS_State (T);
+               else
+                  --  Follow the failure link to the next state
+                  State := Get_CS_Failure_Link (Matrix, State);
 
-            --  For removed state, find failure link for those characters
-            --  that do not have a transition
-            for C in Character'Range loop
-
-               --  If transition function is defined for character and state
-               if T.Transitions (Current_State, C) /= -1 then
-                  declare
-                     --  Failure link for removed state
-                     Failure_State : Integer := T.Failures (Current_State);
-                  begin
-                     --  Find deepest node labeled by suffix of string from
-                     --  root to current state
-                     while T.Transitions (Failure_State, C) = -1 loop
-                        pragma Loop_Variant (Decreases => Failure_State);
-                        Failure_State := T.Failures (Failure_State);
-                     end loop;
-
-                     Failure_State := T.Transitions (Failure_State, C);
-                     T.Failures (T.Transitions (Current_State, C)) :=
-                        Failure_State;
-
-                     declare
-                        Target_State : constant Integer :=
-                           T.Transitions (Current_State, C);
-                     begin
-                        if Target_State /= Failure_State then
-                           declare
-                              Local_Overloaded : Boolean;
-                              Failure_Output : constant State_Output :=
-                                 T.Outputs (Failure_State);
-                           begin
-                              Merge_Outputs (
-                                 T.Outputs (Target_State),
-                                 Failure_Output,
-                                 Local_Overloaded);
-                              if Local_Overloaded then
-                                 T.Overloaded := True;
-                              end if;
-                           end;
-                        end if;
-                     end;
-
-                     --  Insert next level of Trie into queue
-                     Queue.Append (T.Transitions (Current_State, C));
-                     Queue_Size := Queue_Size + 1;
-                  end;
+                  if State = CS_No_State then
+                     return CS_Start_State;  --  No valid transition found
+                  end if;
                end if;
-            end loop;
-         end;
-      end loop;
-   end Build_Failure_Links;
+            end;
+         end loop;
 
-   ----------------------------------------------------------------------------
-   --  Build_Simple_Automaton
-   --  This function builds the Aho-Corasick automaton from the given patterns.
-   --  It constructs a trie for the patterns, adds failure links, and prepares
-   --  the automaton for matching.
-   ----------------------------------------------------------------------------
-   function Build_Simple_Automaton (Patterns : Pattern_Array;
-                                    Nocase   : Case_Sensitivity)
-      return Simple_Automaton with SPARK_Mode
-   is
-      States : Natural := 1; -- Start state
-   begin
-      return T : Simple_Automaton (Get_Max_States (Patterns, Nocase)) do
-         --  Initialize automaton structure
-         T.Transitions := [others => [others => No_State]];
-         T.Failures := [others => No_State];
-         T.Outputs := [others => <>];
+         return CS_Start_State;  --  No valid transition found
+      end Find_Next_CS_State;
 
-         Build_Trie (T, Patterns, Nocase, States);
-         Add_Default_Transitions (T);
-         Build_Failure_Links (T, States);
+      -------------------------------------------------------------------------
+      --  Find_Next_CI_State
+      -------------------------------------------------------------------------
+      function Find_Next_CI_State (
+         Matrix     : CI_Matrix;
+         From_State : CI_State;
+         Char       : Character) return CI_State with SPARK_Mode
+      is
+         State : CI_State_Extended := From_State;
+      begin
+         --  Find a valid transition for the char
+         for I in 1 .. CI_State'Last loop
+            declare
+               T : constant CI_State_Extended :=
+                  Get_CI_Character_Transition (Matrix, State, Char);
+            begin
+               if T /= CI_No_State then
+                  return T;
+               else
+                  --  Follow the failure link to the next state
+                  State := Get_CI_Failure_Link (Matrix, State);
 
-         T.Initialized := True;
-         T.Current_State := Start_State;
-      end return;
-   end Build_Simple_Automaton;
-
-   ----------------------------------------------------------------------------
-   --  Build_Automaton
-   --  Wrapper for both case-sensitive and case-insensitive sub-automata.
-   ----------------------------------------------------------------------------
-   function Build_Automaton (Patterns : Pattern_Array) return Automaton
-      with SPARK_Mode
-   is
-      CS_States : constant Natural :=
-         Get_Max_States (Patterns, Case_Sensitive);
-      CI_States : constant Natural :=
-         Get_Max_States (Patterns, Case_Insensitive);
-   begin
-      return T : Automaton := (
-         CS_States => CS_States,
-         CI_States => CI_States,
-         CS_Automaton => Build_Simple_Automaton (Patterns, Case_Sensitive),
-         CI_Automaton => Build_Simple_Automaton (Patterns, Case_Insensitive),
-         others => <>)
-      do
-         T.Stream_Index := 0;
-         T.Overloaded := T.CS_Automaton.Overloaded or else
-                         T.CI_Automaton.Overloaded;
-         T.Initialized := not T.Overloaded;
-      end return;
-   end Build_Automaton;
-
-   ----------------------------------------------------------------------------
-   --  Check_Match_Position
-   --  For patterns which specify distance/offset/depth/within modifiers, this
-   --  function checks if the current position in the text matches the pattern
-   --  based on the match start and end locations, stream index, and
-   --  previous match end position.
-   --  @param Pattern            The pattern to match.
-   --  @param Start_Pos          The starting position of this match (relative
-   --   to the start of the stream).
-   --  @param End_Pos            The ending position of this match (relative
-   --   to start of the stream).
-   --  @param Stream_Index       Current position within the input stream
-   --  @param Prev_Match_End The end position of the previous match.
-   --  @return True if the position matches the pattern, otherwise False.
-   ----------------------------------------------------------------------------
-   function Check_Match_Position (Pattern        : Enhanced_Pattern_Access;
-                                  Start_Pos      : Natural;
-                                  End_Pos        : Natural;
-                                  Prev_Match_End : Integer)
-      return Boolean with SPARK_Mode
-   is
-   begin
-      --  Depth/Offset are used to limit matches relative to stream position.
-      --  Distance/Within are used to limit matches relative to the previous
-      --  match position. Note that Start_Pos and End_Pos are already
-      --  adjusted by the Stream_Index, so they are relative to the stream.
-
-      --  Depth: pattern must end within the first Pattern.Depth chars of
-      --  the stream.
-      if Pattern.Depth /= No_Value then
-         if End_Pos > Pattern.Depth.Value then
-            return False; -- Pattern ends after the allowed depth
-         end if;
-      end if;
-
-      --  Offset: pattern must start after the first Pattern.Offset chars of
-      --  the stream.
-      if Pattern.Offset /= No_Value then
-         if Start_Pos < Pattern.Offset.Value then
-            return False; -- Pattern starts before the allowed offset
-         end if;
-      end if;
-
-      --  Distance: pattern must start within N bytes of previous match
-      if Pattern.Distance /= No_Value then
-         if Prev_Match_End /= -1 then
-            if Start_Pos < Prev_Match_End + Pattern.Distance.Value then
-               return False; --  Pattern starts before the allowed distance
-            end if;
-         else
-            return False; --  Fail if no previous match but distance is set
-         end if;
-      end if;
-
-      --  Within: pattern must end within N bytes of previous match
-      if Pattern.Within /= No_Value then
-         if Prev_Match_End /= -1 then
-            if End_Pos > Prev_Match_End + Pattern.Within.Value then
-               return False; --  Pattern ends after the allowed within
-            end if;
-         else
-            return False; --  Fail if no previous match but within is set
-         end if;
-      end if;
-
-      return True;
-   end Check_Match_Position;
-
-   ----------------------------------------------------------------------------
-   --  Get_Prev_Match_End
-   --  Given a Matches array and a _current_ pattern index, this function
-   --  returns the end position of the preceding match, or -1 if no previous
-   --  match exists for that pattern.
-   ----------------------------------------------------------------------------
-   function Get_Prev_Match_End (Matches       : Match_Array;
-                                Pattern_Index : Positive) return Integer
-      with SPARK_Mode is
-   begin
-      if Pattern_Index = Matches'First then
-         --  First pattern, so no previous match
-         return -1;
-      end if;
-
-      if Matches (Pattern_Index - 1).EP = null then
-         --  Previous pattern hasn't been matched
-         return -1;
-      end if;
-
-      --  Return the end position of the previous match
-      return Matches (Pattern_Index - 1).End_Position.Value;
-   end Get_Prev_Match_End;
-
-   ----------------------------------------------------------------------------
-   --  Find_Next_State
-   --  This procedure finds the next state in the Aho-Corasick automaton based
-   --  on the current state and the next input character.
-   ----------------------------------------------------------------------------
-   procedure Find_Next_State (T          : in out Simple_Automaton;
-                              Next_Input : Character) with SPARK_Mode
-   is
-      Answer : State_Or_None := T.Current_State;
-   begin
-      --  Fast path: direct transition exists
-      if T.Transitions (Answer, Next_Input) /= No_State then
-         T.Current_State := T.Transitions (Answer, Next_Input);
-         return;
-      end if;
-
-      --  Slow path: follow failure links
-      --  Unrolled first iteration for common case
-      Answer := T.Failures (Answer);
-
-      if Answer >= Start_State and then
-         T.Transitions (Answer, Next_Input) /= No_State
-      then
-         T.Current_State := T.Transitions (Answer, Next_Input);
-         return;
-      end if;
-
-      --  If transition not defined, follow failure links
-      while Answer >= Start_State and then
-         T.Transitions (Answer, Next_Input) = No_State loop
-
-         Answer := T.Failures (Answer);
-      end loop;
-
-      T.Current_State := T.Transitions (Answer, Next_Input);
-   end Find_Next_State;
-
-   ----------------------------------------------------------------------------
-   --  Find_Matches
-   ----------------------------------------------------------------------------
-   procedure Find_Matches (T        : in out Automaton;
-                           Patterns : Pattern_Array;
-                           Matches  : in out Match_Array;
-                           Text     : String) with SPARK_Mode
-   is
-      C  : Character;
-      TCS : Simple_Automaton renames T.CS_Automaton;
-      TCI : Simple_Automaton renames T.CI_Automaton;
-   begin
-      for I in Text'Range loop
-
-         C := Text (I);
-
-         Find_Next_State (TCS, C);
-         Find_Next_State (TCI, To_Lower (C));
-
-         --  See if there are any matches in the current state.
-         if TCS.Outputs (TCS.Current_State).Count > 0 then
-            --  Look up the patterns that matched at this state
-            for J in 1 .. TCS.Outputs (TCS.Current_State).Count loop
-               declare
-                  --  matched pattern index
-                  MPI : constant Positive :=
-                     TCS.Outputs (TCS.Current_State).Matched_Patterns (J);
-
-                  Start_Pos      : constant Natural :=
-                     I - Patterns (MPI).Pattern'Length + 1 + T.Stream_Index;
-
-                  End_Pos        : constant Natural := I + T.Stream_Index;
-                  Prev_Match_End : constant Integer :=
-                     Get_Prev_Match_End (Matches, MPI);
-               begin
-                  if Check_Match_Position (
-                     Pattern        => Patterns (MPI),
-                     Start_Pos      => Start_Pos,
-                     End_Pos        => End_Pos,
-                     Prev_Match_End => Prev_Match_End)
-                  then
-                     Matches (MPI).EP := Patterns (MPI);
-                     Matches (MPI).Start_Position :=
-                        (O => Just, Value => Start_Pos);
-                     Matches (MPI).End_Position :=
-                        (O => Just, Value => End_Pos);
+                  if State = CI_No_State then
+                     return CI_Start_State;  --  No valid transition found
                   end if;
-               end;
-            end loop;
+               end if;
+            end;
+         end loop;
+
+         return CI_Start_State;  --  No valid transition found
+      end Find_Next_CI_State;
+
+      -------------------------------------------------------------------------
+      --  Check_Match_Position
+      --  For patterns which specify distance/offset/depth/within modifiers,
+      --  this function checks if the current position in the text matches the
+      --  pattern based on the match start and end locations, stream index, and
+      --  previous match end position.
+      --  @param Pattern            The pattern to match.
+      --  @param Start_Pos          The starting position of this match
+      --   (relative to the start of the stream).
+      --  @param End_Pos            The ending position of this match
+      --   (relative to start of the stream).
+      --  @param Stream_Index       Current position within the input stream
+      --  @param Prev_Match_End The end position of the previous match.
+      --  @return True if the position matches the pattern, otherwise False.
+      -------------------------------------------------------------------------
+      function Check_Match_Position (Pattern        : Enhanced_Pattern_Access;
+                                     Start_Pos      : Positive;
+                                     End_Pos        : Positive;
+                                     Prev_Match_End : Integer)
+         return Boolean with SPARK_Mode
+      is
+      begin
+         --  Depth/Offset are used to limit matches relative to stream position
+         --  Distance/Within are used to limit matches relative to the previous
+         --  match position. Note that Start_Pos and End_Pos are already
+         --  adjusted by the Stream_Index, so they are relative to the stream.
+
+         --  Depth: pattern must end within the first Pattern.Depth chars of
+         --  the stream.
+         if Pattern.Depth /= No_Value then
+            if End_Pos > Pattern.Depth.Value then
+               return False; -- Pattern ends after the allowed depth
+            end if;
          end if;
 
-         --  Now case-insensitive matches
-         if TCI.Outputs (TCI.Current_State).Count > 0 then
-            for J in 1 .. TCI.Outputs (TCI.Current_State).Count loop
-               declare
-                  MPI : constant Positive :=
-                     TCI.Outputs (TCI.Current_State).Matched_Patterns (J);
-
-                  Start_Pos      : constant Natural :=
-                     I - Patterns (MPI).Pattern'Length + 1 + T.Stream_Index;
-
-                  End_Pos        : constant Natural := I + T.Stream_Index;
-                  Prev_Match_End : constant Integer :=
-                     Get_Prev_Match_End (Matches, MPI);
-               begin
-                  if Check_Match_Position (
-                     Pattern        => Patterns (MPI),
-                     Start_Pos      => Start_Pos,
-                     End_Pos        => End_Pos,
-                     Prev_Match_End => Prev_Match_End)
-                  then
-                     Matches (MPI).EP := Patterns (MPI);
-                     Matches (MPI).Start_Position :=
-                        (O => Just, Value => Start_Pos);
-                     Matches (MPI).End_Position :=
-                        (O => Just, Value => End_Pos);
-                  end if;
-               end;
-            end loop;
+         --  Offset: pattern must start after the first Pattern.Offset chars of
+         --  the stream.
+         if Pattern.Offset /= No_Value then
+            if Start_Pos < Pattern.Offset.Value then
+               return False; -- Pattern starts before the allowed offset
+            end if;
          end if;
-      end loop;
 
-      T.Stream_Index := T.Stream_Index + Text'Length;
-   end Find_Matches;
+         --  Distance: pattern must start within N bytes of previous match
+         if Pattern.Distance /= No_Value then
+            if Prev_Match_End /= -1 then
+               if Start_Pos < Prev_Match_End + Pattern.Distance.Value then
+                  return False; --  Pattern starts before the allowed distance
+               end if;
+            else
+               return False; --  Fail if no previous match but distance is set
+            end if;
+         end if;
 
-   ----------------------------------------------------------------------------
-   --  Reset
-   ----------------------------------------------------------------------------
-   procedure Reset (T : in out Automaton) with SPARK_Mode is
-   begin
-      T.CS_Automaton.Current_State := Start_State;
-      T.CI_Automaton.Current_State := Start_State;
-      T.Stream_Index := 0;
-   end Reset;
+         --  Within: pattern must end within N bytes of previous match
+         if Pattern.Within /= No_Value then
+            if Prev_Match_End /= -1 then
+               if End_Pos > Prev_Match_End + Pattern.Within.Value then
+                  return False; --  Pattern ends after the allowed within
+               end if;
+            else
+               return False; --  Fail if no previous match but within is set
+            end if;
+         end if;
+
+         return True;
+      end Check_Match_Position;
+
+      -------------------------------------------------------------------------
+      --  Get_Prev_Match_End
+      --  Given a Matches array and a _current_ pattern index, this function
+      --  returns the end position of the preceding match, or -1 if no previous
+      --  match exists for that pattern.
+      -------------------------------------------------------------------------
+      function Get_Prev_Match_End (Matches       : Match_Array;
+                                   Pattern_Index : Positive) return Integer
+         with SPARK_Mode is
+      begin
+         if Pattern_Index = Matches'First then
+            --  First pattern, so no previous match
+            return -1;
+         end if;
+
+         if Matches (Pattern_Index - 1).EP = null then
+            --  Previous pattern hasn't been matched
+            return -1;
+         end if;
+
+         --  Return the end position of the previous match
+         return Matches (Pattern_Index - 1).End_Position.Value;
+      end Get_Prev_Match_End;
+
+      -------------------------------------------------------------------------
+      --  Check_For_Matches_CS
+      --  Given the current state, record any patterns that match here along
+      --  with the position in the input stream.
+      -------------------------------------------------------------------------
+      procedure Check_For_Matches_CS (
+         Matrix        : CS_Matrix;
+         State         : CS_State;
+         Stream_Idx    : Positive;
+         Patterns      : Pattern_Array;
+         Matches       : in out Match_Array) with SPARK_Mode
+      is
+         Start_Pos : Integer;
+         Prev_End  : Integer;
+      begin
+         --  Iterate through the outputs at this state, and update the matches
+         --  if any are found.
+         for I in Matches'Range loop
+            if Matrix (State, Column(I)) /= CS_No_State then
+               --  Found a match for pattern I at this state
+               Start_Pos := Stream_Idx - Patterns (I).Pattern'Length + 1;
+               Prev_End  := Get_Prev_Match_End (Matches, I);
+
+               --  Ensure position constraints are met
+               if Check_Match_Position (Pattern        => Patterns (I),
+                                        Start_Pos      => Start_Pos,
+                                        End_Pos        => Stream_Idx,
+                                        Prev_Match_End => Prev_End)
+               then
+                  --  Valid match found, update the Matches array
+                  Matches (I) := (EP             => Patterns (I),
+                                  Start_Position =>
+                                    (O => Just, Value => Start_Pos),
+                                  End_Position   =>
+                                    (O => Just, Value => Stream_Idx));
+               end if;
+            end if;
+         end loop;
+      end Check_For_Matches_CS;
+
+      -------------------------------------------------------------------------
+      --  Check_For_Matches_CI
+      --  Given the current state, record any patterns that match here along
+      --  with the position in the input stream.
+      -------------------------------------------------------------------------
+      procedure Check_For_Matches_CI (
+         Matrix        : CI_Matrix;
+         State         : CI_State;
+         Stream_Idx    : Positive;
+         Patterns      : Pattern_Array;
+         Matches       : in out Match_Array) with SPARK_Mode
+      is
+         Start_Pos : Integer;
+         Prev_End  : Integer;
+      begin
+         --  Iterate through the outputs at this state, and update the matches
+         --  if any are found.
+         for I in Matches'Range loop
+            if Matrix (State, Column (I)) /= CI_No_State then
+               --  Found a match for pattern I at this state
+               Start_Pos := Stream_Idx - Patterns (I).Pattern'Length + 1;
+               Prev_End  := Get_Prev_Match_End (Matches, I);
+
+               --  Ensure position constraints are met
+               if Check_Match_Position (Pattern        => Patterns (I),
+                                        Start_Pos      => Start_Pos,
+                                        End_Pos        => Stream_Idx,
+                                        Prev_Match_End => Prev_End)
+               then
+
+                  --  Valid match found, update the Matches array
+                  Matches (I) := (EP             => Patterns (I),
+                                  Start_Position =>
+                                    (O => Just, Value => Start_Pos),
+                                  End_Position   =>
+                                    (O => Just, Value => Stream_Idx));
+               end if;
+            end if;
+         end loop;
+      end Check_For_Matches_CI;
+
+      -------------------------------------------------------------------------
+      --  Find_Matches
+      -------------------------------------------------------------------------
+      procedure Find_Matches (T        : in out Automaton;
+                              Patterns : Pattern_Array;
+                              Matches  : in out Match_Array;
+                              Text     : String) with SPARK_Mode
+      is
+         pragma Suppress (All_Checks);
+      begin
+         for C of Text loop
+            --  Process the case-sensitive automaton if it exists
+            if T.Has_CS then
+               T.CS_Current_State := Find_Next_CS_State (
+                  T.CS_States, T.CS_Current_State, C);
+
+               Check_For_Matches_CS (
+                  T.CS_States, T.CS_Current_State, T.Stream_Idx,
+                  Patterns, Matches);
+            end if;
+
+            --  Process the case-insensitive automaton if it exists
+            if T.Has_CI then
+               T.CI_Current_State := Find_Next_CI_State (
+                  T.CI_States, T.CI_Current_State, To_Lower (C));
+
+               Check_For_Matches_CI (
+                  T.CI_States, T.CI_Current_State, T.Stream_Idx,
+                  Patterns, Matches);
+            end if;
+
+            --  Increment the stream index after processing each character
+            T.Stream_Idx := T.Stream_Idx + 1;
+         end loop;
+      end Find_Matches;
+
+      -------------------------------------------------------------------------
+      --  Reset
+      -------------------------------------------------------------------------
+      procedure Reset (T : in out Automaton) with SPARK_Mode is
+      begin
+         T.CS_Current_State := CS_Start_State;
+         T.CI_Current_State := CI_Start_State;
+         T.Stream_Idx := 1;
+      end Reset;
+
+   end Automatons;
 
 end Aho_Corasick;
