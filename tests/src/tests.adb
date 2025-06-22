@@ -15,6 +15,7 @@ with Ada.Text_IO;    use Ada.Text_IO;
 with GNAT.Traceback.Symbolic;
 
 procedure Tests is
+   
    Success_Count : Natural := 0;
    Total_Tests   : Natural := 0;
 
@@ -281,6 +282,7 @@ procedure Tests is
    --  Compare against naive string search for performance validation
    ----------------------------------------------------------------------------
    procedure Test_Performance_vs_Naive is
+
       --  Large text simulation (network packet payload)
       Text : constant String := [1 .. 8192 => 'A'] &
                                 "GET /admin/config.php?cmd=ls" &

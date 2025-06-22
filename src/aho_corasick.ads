@@ -18,14 +18,6 @@ package Aho_Corasick with SPARK_Mode is
    Max_Pattern_Length     : constant Positive := 1024;
    Max_Number_Of_Patterns : constant Positive := 65535;
 
-   --  Use single matrix to store transitions, failures, and outputs
-   --  One row per state, one column per char, one for failure, and then
-   --  one output column per pattern.
-   --           Transitions    Failures   Outputs
-   --  State:   [A][B][C].......[Fail?][P1][P2][P3]...
-   --  State 1: [1][0][2].......[  0  ][ 1][ 0][ 1]...
-   --  State 2: [0][1][0].......[  1  ][ 0][ 0][ 1]...
-
    type Case_Sensitivity is (Case_Sensitive, Case_Insensitive);
 
    type String_Access is access constant String;
@@ -111,6 +103,13 @@ package Aho_Corasick with SPARK_Mode is
 
    ----------------------------------------------------------------------------
    --  Automatons sub-package
+   --  Use single matrix to store transitions, failure link, and outputs
+   --  One row per state, one column per char, one for failure, and then
+   --  one output column per pattern.
+   --           Transitions    Failures   Outputs
+   --  State:   [A][B][C].......[Fail?][P1][P2][P3]...
+   --  State 1: [1][0][2].......[  0  ][ 1][ 0][ 1]...
+   --  State 2: [0][1][0].......[  1  ][ 0][ 0][ 1]...
    ----------------------------------------------------------------------------
    generic
       Patterns : Pattern_Array;
@@ -131,29 +130,20 @@ package Aho_Corasick with SPARK_Mode is
       Output_Start_Idx : constant Column_Idx := 257;
 
       --  Row indices for the automaton matrices
-      type CS_State is new Integer range 0 .. CS_Max_States - 1;
-      type CI_State is new Integer range 0 .. CI_Max_States - 1;
+      type CS_State_Extended is new Integer range -1 .. CS_Max_States - 1;
+      type CI_State_Extended is new Integer range -1 .. CI_Max_States - 1;
+
+      subtype CS_State is CS_State_Extended range 0 .. CS_State_Extended'Last;
+      subtype CI_State is CI_State_Extended range 0 .. CI_State_Extended'Last;
 
       CS_Start_State : constant CS_State := 0;
       CI_Start_State : constant CI_State := 0;
 
-      type State_Validity is (Uninitialized,
-                              Valid_State,
-                              No_Transition,
-                              Valid_Output);
+      CS_No_State : constant CS_State_Extended := -1;
+      CI_No_State : constant CI_State_Extended := -1;
 
-      type CS_Transition is record
-         Valid      : State_Validity := Uninitialized;
-         Next_State : CS_State := CS_Start_State;
-      end record with Pack;
-
-      type CI_Transition is record
-         Valid      : State_Validity := Uninitialized;
-         Next_State : CI_State := CI_Start_State;
-      end record with Pack;
-
-      type CS_Matrix is array (CS_State, Column_Idx) of CS_Transition;
-      type CI_Matrix is array (CI_State, Column_Idx) of CI_Transition;
+      type CS_Matrix is array (CS_State, Column_Idx) of CS_State_Extended;
+      type CI_Matrix is array (CI_State, Column_Idx) of CI_State_Extended;
 
       -------------------------------------------------------------------------
       --  Automaton
@@ -171,8 +161,8 @@ package Aho_Corasick with SPARK_Mode is
       --  @param Stream_Idx is the index of the current stream being processed
       -------------------------------------------------------------------------
       type Automaton is limited record
-         CS_States        : CS_Matrix;
-         CI_States        : CI_Matrix;
+         CS_States        : CS_Matrix := (others => (others => CS_No_State));
+         CI_States        : CI_Matrix := (others => (others => CI_No_State));
 
          Has_CS           : Boolean := False;
          Has_CI           : Boolean := False;

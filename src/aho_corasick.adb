@@ -15,8 +15,6 @@ with SPARK.Containers.Formal.Doubly_Linked_Lists;
 
 package body Aho_Corasick with SPARK_Mode is
 
-   pragma Suppress (All_Checks);
-
    ----------------------------------------------------------------------------
    --  From_Integer
    --  Ada 2022 integer literal to an Integer_Option.
@@ -66,9 +64,9 @@ package body Aho_Corasick with SPARK_Mode is
 
    ----------------------------------------------------------------------------
    --  Sum_Lengths
-   --  This function computes the sum of lengths of all case-sensitive or
-   --  case-insensitive patterns in the array, giving us the total number of
-   --  states needed in the automaton.
+   --  Compute the sum of lengths of all case-sensitive OR case-insensitive
+   --  patterns in the array, giving us the total number of states needed in
+   --  the automaton.
    ----------------------------------------------------------------------------
    function Sum_Lengths (Patterns : Pattern_Array;
                          Nocase   : Case_Sensitivity) return Natural
@@ -105,8 +103,8 @@ package body Aho_Corasick with SPARK_Mode is
 
    ----------------------------------------------------------------------------
    --  Get_Max_States
-   --  This function computes the maximum number of states needed for the
-   --  automaton based on the sum of lengths of the patterns.
+   --  Compute the maximum number of states needed for the automaton based on
+   --  the sum of lengths of the patterns.
    ----------------------------------------------------------------------------
    function Get_Max_States (Patterns : Pattern_Array;
                             Nocase   : Case_Sensitivity)
@@ -122,17 +120,18 @@ package body Aho_Corasick with SPARK_Mode is
    package body Automatons is
       -------------------------------------------------------------------------
       --  Column
-      --  Helper to get index of a column in the character part of the matrix.
+      --  Helper to get index of a column in the character part of the matrix
       -------------------------------------------------------------------------
       function Column (C : Character) return Column_Idx is
-         (Column_Idx (Character'Pos (C))) with SPARK_Mode;
+         (Column_Idx (Character'Pos (C))) with Inline, SPARK_Mode;
 
       -------------------------------------------------------------------------
       --  Column
       --  Helper to get index of a column in the output part of the matrix
       -------------------------------------------------------------------------
       function Column (Pattern_Idx : Pattern_Array_Index) return Column_Idx is
-         (Output_Start_Idx + Column_Idx (Pattern_Idx) - 1) with SPARK_Mode,
+         (Output_Start_Idx + Column_Idx (Pattern_Idx) - 1)
+      with Inline, SPARK_Mode,
             Pre => Pattern_Idx in 1 .. Patterns'Length and then
                    Column_Idx (Pattern_Idx) <= Column_Idx'Last;
 
@@ -146,11 +145,9 @@ package body Aho_Corasick with SPARK_Mode is
          To_State   : CS_State)
       with SPARK_Mode,
          Post =>
-            Matrix (From_State, Column (Char)).Valid =
-               Valid_State
+            Matrix (From_State, Column (Char)) /= CS_No_State
          and then
-            Matrix (From_State, Column (Char)).Next_State =
-               To_State;
+            Matrix (From_State, Column (Char)) = To_State;
 
       procedure Set_CS_Character_Transition (
          Matrix     : in out CS_Matrix;
@@ -160,8 +157,7 @@ package body Aho_Corasick with SPARK_Mode is
       is
          Col : constant Column_Idx := Column_Idx (Char_To_Index (Char));
       begin
-         Matrix (From_State, Col) := (Valid      => Valid_State,
-                                      Next_State => To_State);
+         Matrix (From_State, Col) := To_State;
       end Set_CS_Character_Transition;
 
       -------------------------------------------------------------------------
@@ -174,11 +170,9 @@ package body Aho_Corasick with SPARK_Mode is
          To_State   : CI_State)
       with SPARK_Mode,
          Post =>
-            Matrix (From_State, Column (To_Lower (Char))).Valid =
-               Valid_State
+            Matrix (From_State, Column (To_Lower (Char))) /= CI_No_State
          and then
-            Matrix (From_State, Column (To_Lower (Char))).Next_State =
-               To_State;
+            Matrix (From_State, Column (To_Lower (Char))) = To_State;
 
       procedure Set_CI_Character_Transition (
          Matrix     : in out CI_Matrix;
@@ -189,8 +183,7 @@ package body Aho_Corasick with SPARK_Mode is
          Col : constant Column_Idx := Column_Idx (
                Char_To_Index (To_Lower (Char)));
       begin
-         Matrix (From_State, Col) := (Valid      => Valid_State,
-                                      Next_State => To_State);
+         Matrix (From_State, Col) := To_State;
       end Set_CI_Character_Transition;
 
       -------------------------------------------------------------------------
@@ -202,9 +195,9 @@ package body Aho_Corasick with SPARK_Mode is
          To_State   : CS_State)
       with SPARK_Mode,
          Post =>
-            Matrix (From_State, Failure_Idx).Valid = Valid_State
+            Matrix (From_State, Failure_Idx) /= CS_No_State
          and then
-            Matrix (From_State, Failure_Idx).Next_State = To_State;
+            Matrix (From_State, Failure_Idx) = To_State;
 
       procedure Set_CS_Failure_Link (
          Matrix     : in out CS_Matrix;
@@ -212,8 +205,7 @@ package body Aho_Corasick with SPARK_Mode is
          To_State   : CS_State) with SPARK_Mode
       is
       begin
-         Matrix (From_State, Failure_Idx) := (Valid      => Valid_State,
-                                              Next_State => To_State);
+         Matrix (From_State, Failure_Idx) := To_State;
       end Set_CS_Failure_Link;
 
       -------------------------------------------------------------------------
@@ -225,9 +217,9 @@ package body Aho_Corasick with SPARK_Mode is
          To_State   : CI_State)
       with SPARK_Mode,
          Post =>
-            Matrix (From_State, Failure_Idx).Valid = Valid_State
+            Matrix (From_State, Failure_Idx) /= CI_No_State
          and then
-            Matrix (From_State, Failure_Idx).Next_State = To_State;
+            Matrix (From_State, Failure_Idx) = To_State;
 
       procedure Set_CI_Failure_Link (
          Matrix     : in out CI_Matrix;
@@ -235,8 +227,7 @@ package body Aho_Corasick with SPARK_Mode is
          To_State   : CI_State) with SPARK_Mode
       is
       begin
-         Matrix (From_State, Failure_Idx) := (Valid      => Valid_State,
-                                              Next_State => To_State);
+         Matrix (From_State, Failure_Idx) := To_State;
       end Set_CI_Failure_Link;
 
       -------------------------------------------------------------------------
@@ -249,7 +240,7 @@ package body Aho_Corasick with SPARK_Mode is
       with SPARK_Mode,
          Pre => Pattern_Idx in 1 .. Patterns'Length and then
                 Column (Pattern_Idx) <= Column_Idx'Last,
-         Post => Matrix (State, Column (Pattern_Idx)).Valid = Valid_Output;
+         Post => Matrix (State, Column (Pattern_Idx)) /= CS_No_State;
 
       procedure Set_CS_Pattern_Output (
          Matrix      : in out CS_Matrix;
@@ -258,8 +249,7 @@ package body Aho_Corasick with SPARK_Mode is
       is
          Col : constant Column_Idx := Column (Pattern_Idx);
       begin
-         Matrix (State, Col) := (Valid => Valid_Output,
-                                 Next_State => CS_Start_State);
+         Matrix (State, Col) := CS_Start_State;
       end Set_CS_Pattern_Output;
 
       -------------------------------------------------------------------------
@@ -272,7 +262,7 @@ package body Aho_Corasick with SPARK_Mode is
       with SPARK_Mode,
          Pre => Pattern_Idx in 1 .. Patterns'Length and then
                 Column (Pattern_Idx) <= Column_Idx'Last,
-         Post => Matrix (State, Column (Pattern_Idx)).Valid = Valid_Output;
+         Post => Matrix (State, Column (Pattern_Idx)) /= CI_No_State;
 
       procedure Set_CI_Pattern_Output (
          Matrix      : in out CI_Matrix;
@@ -281,8 +271,7 @@ package body Aho_Corasick with SPARK_Mode is
       is
          Col : constant Column_Idx := Column (Pattern_Idx);
       begin
-         Matrix (State, Col) := (Valid      => Valid_Output,
-                                 Next_State => CI_Start_State);
+         Matrix (State, Col) := CI_Start_State;
       end Set_CI_Pattern_Output;
 
       -------------------------------------------------------------------------
@@ -293,7 +282,7 @@ package body Aho_Corasick with SPARK_Mode is
       function Get_CS_Character_Transition (
          Matrix     : CS_Matrix;
          From_State : CS_State;
-         Char       : Character) return CS_Transition
+         Char       : Character) return CS_State_Extended
          is (Matrix (From_State, Column_Idx (Character'Pos (Char))))
       with SPARK_Mode;
 
@@ -303,7 +292,7 @@ package body Aho_Corasick with SPARK_Mode is
       function Get_CI_Character_Transition (
          Matrix     : CI_Matrix;
          From_State : CI_State;
-         Char       : Character) return CI_Transition
+         Char       : Character) return CI_State_Extended
          is (Matrix (From_State, Column_Idx (Character'Pos (Char))))
       with SPARK_Mode;
 
@@ -314,22 +303,22 @@ package body Aho_Corasick with SPARK_Mode is
       -------------------------------------------------------------------------
       function Get_CS_Failure_Link (
          Matrix     : CS_Matrix;
-         From_State : CS_State) return CS_State
-            is (Matrix (From_State, Failure_Idx).Next_State)
+         From_State : CS_State) return CS_State_Extended
+            is (Matrix (From_State, Failure_Idx))
          with SPARK_Mode,
-            Pre => Matrix (From_State, Failure_Idx).Valid = Valid_State,
-            Post => Get_CS_Failure_Link'Result in CS_State'Range;
+            Pre => Matrix (From_State, Failure_Idx) /= CS_No_State,
+            Post => Get_CS_Failure_Link'Result in CS_State_Extended'Range;
 
       -------------------------------------------------------------------------
       --  Get_CI_Failure_Link
       -------------------------------------------------------------------------
       function Get_CI_Failure_Link (
          Matrix     : CI_Matrix;
-         From_State : CI_State) return CI_State
-            is (Matrix (From_State, Failure_Idx).Next_State)
+         From_State : CI_State) return CI_State_Extended
+            is (Matrix (From_State, Failure_Idx))
          with SPARK_Mode,
-            Pre => Matrix (From_State, Failure_Idx).Valid = Valid_State,
-            Post => Get_CI_Failure_Link'Result in CI_State'Range;
+            Pre => Matrix (From_State, Failure_Idx) /= CI_No_State,
+            Post => Get_CI_Failure_Link'Result in CI_State_Extended'Range;
 
       -------------------------------------------------------------------------
       --
@@ -372,14 +361,14 @@ package body Aho_Corasick with SPARK_Mode is
          for I in Pattern'Range loop
             declare
                Char : constant Character := Pattern (I);
-               Existing_Transition : constant CS_Transition :=
+               Existing_Transition : constant CS_State_Extended :=
                   Get_CS_Character_Transition (Matrix,
                                                Current_State,
                                                Char);
             begin
-               if Existing_Transition.Valid = Valid_State then
+               if Existing_Transition /= CS_No_State then
                   --  Transition already exists, reuse it.
-                  Current_State := Existing_Transition.Next_State;
+                  Current_State := CS_State (Existing_Transition);
                else
                   --  Create a new transition for this character
                   pragma Assert (Next_Available_State < CS_State'Last);
@@ -434,14 +423,14 @@ package body Aho_Corasick with SPARK_Mode is
          for I in Pattern'Range loop
             declare
                Char : constant Character := To_Lower (Pattern (I));
-               Existing_Transition : constant CI_Transition :=
+               Existing_Transition : constant CI_State_Extended :=
                   Get_CI_Character_Transition (Matrix,
                                                Current_State,
                                                Char);
             begin
-               if Existing_Transition.Valid = Valid_State then
+               if Existing_Transition /= CI_No_State then
                   --  Transition already exists, reuse it.
-                  Current_State := Existing_Transition.Next_State;
+                  Current_State := CI_State (Existing_Transition);
                else
                   --  Create a new transition for this character
                   pragma Assert (Next_Available_State < CI_State'Last);
@@ -547,27 +536,27 @@ package body Aho_Corasick with SPARK_Mode is
          --  all characters that have transitions from the start state.
          ----------------------------------------------------------------------
          procedure Initialize_Depth1_Failure_Links (Matrix : in out CS_Matrix)
-         with Pre => Queue.Is_Empty and then
-                     Matrix'Length (1) = CS_Max_States and then
-                     Matrix (CS_Start_State, Failure_Idx).Valid =
-                       Uninitialized;
+         with
+            Pre => Queue.Is_Empty and then
+                   Matrix'Length (1) = CS_Max_States and then
+                   Matrix (CS_Start_State, Failure_Idx) = CS_No_State;
 
          procedure Initialize_Depth1_Failure_Links (Matrix : in out CS_Matrix)
          is
          begin
             for C in Character'Range loop
                declare
-                  T : constant CS_Transition :=
+                  T : constant CS_State_Extended :=
                      Get_CS_Character_Transition (
                         Matrix     => Matrix,
                         From_State => CS_Start_State,
                         Char       => C);
                begin
-                  if T.Valid = Valid_State then
+                  if T /= CS_No_State then
                      Set_CS_Failure_Link (Matrix,
-                                          T.Next_State,
+                                          CS_State (T),
                                           CS_Start_State);
-                     Queue.Append (T.Next_State);
+                     Queue.Append (T);
                   end if;
                end;
             end loop;
@@ -585,9 +574,9 @@ package body Aho_Corasick with SPARK_Mode is
             Char          : Character)
          with
             Pre =>
-               Matrix (From_State, Failure_Idx).Valid = Valid_State,
+               Matrix (From_State, Failure_Idx) /= CS_No_State,
             Post =>
-               Matrix (To_State, Failure_Idx).Valid = Valid_State;
+               Matrix (To_State, Failure_Idx) /= CS_No_State;
 
          procedure Find_Failure_Link (
             Matrix        : in out CS_Matrix;
@@ -605,15 +594,15 @@ package body Aho_Corasick with SPARK_Mode is
                exit when B = CS_Start_State or else Found_Failure;
 
                declare
-                  BT : constant CS_Transition :=
+                  BT : constant CS_State_Extended :=
                      Get_CS_Character_Transition (
                         Matrix     => Matrix,
                         From_State => B,
                         Char       => Char);
                begin
-                  if BT.Valid = Valid_State then
+                  if BT /= CS_No_State then
                      --  Found a valid transition
-                     Set_CS_Failure_Link (Matrix, To_State, BT.Next_State);
+                     Set_CS_Failure_Link (Matrix, To_State, CS_State (BT));
                      Found_Failure := True;
                   else
                      --  Follow the failure link to the next state
@@ -627,14 +616,14 @@ package body Aho_Corasick with SPARK_Mode is
                --  iteration limit. In both cases, check if root has a
                --  transition on this character. This should never happen.
                declare
-                  Root_Trans : constant CS_Transition :=
+                  Root_Trans : constant CS_State_Extended :=
                      Get_CS_Character_Transition (
                         Matrix, CS_Start_State, Char);
                begin
-                  if Root_Trans.Valid = Valid_State then
+                  if Root_Trans /= CS_No_State then
                      --  Root has a transition on this character
                      Set_CS_Failure_Link (
-                        Matrix, To_State, Root_Trans.Next_State);
+                        Matrix, To_State, Root_Trans);
                   else
                      --  No transition anywhere for this character -
                      --  failure link points to root
@@ -653,30 +642,30 @@ package body Aho_Corasick with SPARK_Mode is
          procedure Process_State_For_Failure_Links (
             Matrix        : in out CS_Matrix;
             Current_State : CS_State)
-         with Pre =>
-            not Queue.Is_Empty and then
-            Matrix (Current_State, Failure_Idx).Valid = Valid_State;
+         with
+            Pre =>
+               not Queue.Is_Empty and then
+               Matrix (Current_State, Failure_Idx) /= CS_No_State;
 
          procedure Process_State_For_Failure_Links (
             Matrix        : in out CS_Matrix;
-            Current_State : CS_State)
-         is
+            Current_State : CS_State) is
          begin
             for C in Character'Range loop
                declare
-                  T : constant CS_Transition :=
+                  T : constant CS_State_Extended :=
                      Get_CS_Character_Transition (
                         Matrix     => Matrix,
                         From_State => Current_State,
                         Char       => C);
                begin
-                  if T.Valid = Valid_State then
+                  if T /= CS_No_State then
                      --  Found next state, compute its failure link
                      Find_Failure_Link (
-                        Matrix, Current_State, T.Next_State, C);
+                        Matrix, Current_State, T, C);
 
                      --  Add the next state to the queue for processing
-                     Queue.Append (T.Next_State);
+                     Queue.Append (T);
                   end if;
                end;
             end loop;
@@ -702,7 +691,6 @@ package body Aho_Corasick with SPARK_Mode is
       --  Build_CI_Failure_Links
       -------------------------------------------------------------------------
       procedure Build_CI_Failure_Links (Matrix : in out CI_Matrix)
-         with SPARK_Mode
       is
          package Queue_Package is new
             SPARK.Containers.Formal.Doubly_Linked_Lists (
@@ -716,27 +704,27 @@ package body Aho_Corasick with SPARK_Mode is
          --  Initialize_Depth1_Failure_Links
          ----------------------------------------------------------------------
          procedure Initialize_Depth1_Failure_Links (Matrix : in out CI_Matrix)
-         with Pre => Queue.Is_Empty and then
-                     Matrix'Length (1) = CI_Max_States and then
-                     Matrix (CI_Start_State, Failure_Idx).Valid =
-                       Uninitialized;
+         with
+            Pre => Queue.Is_Empty and then
+                   Matrix'Length (1) = CI_Max_States and then
+                   Matrix (CI_Start_State, Failure_Idx) = CI_No_State;
 
          procedure Initialize_Depth1_Failure_Links (Matrix : in out CI_Matrix)
          is
          begin
             for C in Character'Range loop
                declare
-                  T : constant CI_Transition :=
+                  T : constant CI_State_Extended :=
                      Get_CI_Character_Transition (
                         Matrix     => Matrix,
                         From_State => CI_Start_State,
                         Char       => C);
                begin
-                  if T.Valid = Valid_State then
+                  if T /= CI_No_State then
                      Set_CI_Failure_Link (
-                        Matrix, T.Next_State, CI_Start_State);
+                        Matrix, CI_State (T), CI_Start_State);
 
-                     Queue.Append (T.Next_State);
+                     Queue.Append (T);
                   end if;
                end;
             end loop;
@@ -752,9 +740,9 @@ package body Aho_Corasick with SPARK_Mode is
             Char          : Character)
          with
             Pre =>
-               Matrix (From_State, Failure_Idx).Valid = Valid_State,
+               Matrix (From_State, Failure_Idx) /= CI_No_State,
             Post =>
-               Matrix (To_State, Failure_Idx).Valid = Valid_State;
+               Matrix (To_State, Failure_Idx) /= CI_No_State;
 
          procedure Find_Failure_Link (
             Matrix        : in out CI_Matrix;
@@ -769,14 +757,14 @@ package body Aho_Corasick with SPARK_Mode is
                exit when B = CI_Start_State or else Found_Failure;
 
                declare
-                  BT : constant CI_Transition :=
+                  BT : constant CI_State_Extended :=
                      Get_CI_Character_Transition (
                         Matrix     => Matrix,
                         From_State => B,
                         Char       => Char);
                begin
-                  if BT.Valid = Valid_State then
-                     Set_CI_Failure_Link (Matrix, To_State, BT.Next_State);
+                  if BT /= CI_No_State then
+                     Set_CI_Failure_Link (Matrix, To_State, CI_State (BT));
                      Found_Failure := True;
                   else
                      B := Get_CI_Failure_Link (Matrix, B);
@@ -786,13 +774,13 @@ package body Aho_Corasick with SPARK_Mode is
 
             if not Found_Failure then
                declare
-                  Root_Trans : constant CI_Transition :=
+                  Root_Trans : constant CI_State_Extended :=
                      Get_CI_Character_Transition (
                         Matrix, CI_Start_State, Char);
                begin
-                  if Root_Trans.Valid = Valid_State then
+                  if Root_Trans /= CI_No_State then
                      Set_CI_Failure_Link (
-                        Matrix, To_State, Root_Trans.Next_State);
+                        Matrix, To_State, CI_State (Root_Trans));
                   else
                      Set_CI_Failure_Link (
                         Matrix, To_State, CI_Start_State);
@@ -807,28 +795,28 @@ package body Aho_Corasick with SPARK_Mode is
          procedure Process_State_For_Failure_Links (
             Matrix        : in out CI_Matrix;
             Current_State : CI_State)
-         with Pre =>
-            not Queue.Is_Empty and then
-            Matrix (Current_State, Failure_Idx).Valid = Valid_State;
+         with
+            Pre =>
+               not Queue.Is_Empty and then
+               Matrix (Current_State, Failure_Idx) /= CI_No_State;
 
          procedure Process_State_For_Failure_Links (
             Matrix        : in out CI_Matrix;
-            Current_State : CI_State)
-         is
+            Current_State : CI_State) is
          begin
             for C in Character'Range loop
                declare
-                  T : constant CI_Transition :=
+                  T : constant CI_State_Extended :=
                      Get_CI_Character_Transition (
                         Matrix     => Matrix,
                         From_State => Current_State,
                         Char       => C);
                begin
-                  if T.Valid = Valid_State then
+                  if T /= CI_No_State then
                      Find_Failure_Link (
-                        Matrix, Current_State, T.Next_State, C);
+                        Matrix, Current_State, CI_State (T), C);
 
-                     Queue.Append (T.Next_State);
+                     Queue.Append (T);
                   end if;
                end;
             end loop;
@@ -854,8 +842,7 @@ package body Aho_Corasick with SPARK_Mode is
       --  Has_CS_Pattern
       -------------------------------------------------------------------------
       function Has_CS_Pattern (Patterns : Pattern_Array)
-         return Boolean with SPARK_Mode
-      is
+         return Boolean with SPARK_Mode is
       begin
          for I in Patterns'Range loop
             if Patterns (I) /= null and then
@@ -872,8 +859,7 @@ package body Aho_Corasick with SPARK_Mode is
       --  Has_CI_Pattern
       -------------------------------------------------------------------------
       function Has_CI_Pattern (Patterns : Pattern_Array)
-         return Boolean with SPARK_Mode
-      is
+         return Boolean with SPARK_Mode is
       begin
          for I in Patterns'Range loop
             if Patterns (I) /= null and then
@@ -890,8 +876,7 @@ package body Aho_Corasick with SPARK_Mode is
       --  Build_Automaton
       -------------------------------------------------------------------------
       function Build_Automaton (Patterns : Pattern_Array) return Automaton
-         with SPARK_Mode
-      is
+         with SPARK_Mode is
       begin
          return T : Automaton do
             if Has_CS_Pattern (Patterns) then
@@ -924,22 +909,25 @@ package body Aho_Corasick with SPARK_Mode is
       function Find_Next_CS_State (
          Matrix     : CS_Matrix;
          From_State : CS_State;
-         Char       : Character) return CS_State
-         with SPARK_Mode
+         Char       : Character) return CS_State with SPARK_Mode
       is
-         State            : CS_State := From_State;
+         State : CS_State_Extended := From_State;
       begin
          --  Find a valid transition for the char
          for I in 1 .. CS_State'Last loop
             declare
-               T : constant CS_Transition :=
+               T : constant CS_State_Extended :=
                   Get_CS_Character_Transition (Matrix, State, Char);
             begin
-               if T.Valid = Valid_State then
-                  return T.Next_State;
+               if T /= CS_No_State then
+                  return CS_State (T);
                else
                   --  Follow the failure link to the next state
                   State := Get_CS_Failure_Link (Matrix, State);
+
+                  if State = CS_No_State then
+                     return CS_Start_State;  --  No valid transition found
+                  end if;
                end if;
             end;
          end loop;
@@ -953,22 +941,25 @@ package body Aho_Corasick with SPARK_Mode is
       function Find_Next_CI_State (
          Matrix     : CI_Matrix;
          From_State : CI_State;
-         Char       : Character) return CI_State
-         with SPARK_Mode
+         Char       : Character) return CI_State with SPARK_Mode
       is
-         State            : CI_State := From_State;
+         State : CI_State_Extended := From_State;
       begin
          --  Find a valid transition for the char
          for I in 1 .. CI_State'Last loop
             declare
-               T : constant CI_Transition :=
+               T : constant CI_State_Extended :=
                   Get_CI_Character_Transition (Matrix, State, Char);
             begin
-               if T.Valid = Valid_State then
-                  return T.Next_State;
+               if T /= CI_No_State then
+                  return T;
                else
                   --  Follow the failure link to the next state
                   State := Get_CI_Failure_Link (Matrix, State);
+
+                  if State = CI_No_State then
+                     return CI_Start_State;  --  No valid transition found
+                  end if;
                end if;
             end;
          end loop;
@@ -1078,8 +1069,7 @@ package body Aho_Corasick with SPARK_Mode is
          State         : CS_State;
          Stream_Idx    : Positive;
          Patterns      : Pattern_Array;
-         Matches       : in out Match_Array)
-         with SPARK_Mode
+         Matches       : in out Match_Array) with SPARK_Mode
       is
          Start_Pos : Integer;
          Prev_End  : Integer;
@@ -1087,7 +1077,7 @@ package body Aho_Corasick with SPARK_Mode is
          --  Iterate through the outputs at this state, and update the matches
          --  if any are found.
          for I in Matches'Range loop
-            if Matrix (State, Column(I)).Valid = Valid_Output then
+            if Matrix (State, Column(I)) /= CS_No_State then
                --  Found a match for pattern I at this state
                Start_Pos := Stream_Idx - Patterns (I).Pattern'Length + 1;
                Prev_End  := Get_Prev_Match_End (Matches, I);
@@ -1119,8 +1109,7 @@ package body Aho_Corasick with SPARK_Mode is
          State         : CI_State;
          Stream_Idx    : Positive;
          Patterns      : Pattern_Array;
-         Matches       : in out Match_Array)
-         with SPARK_Mode
+         Matches       : in out Match_Array) with SPARK_Mode
       is
          Start_Pos : Integer;
          Prev_End  : Integer;
@@ -1128,7 +1117,7 @@ package body Aho_Corasick with SPARK_Mode is
          --  Iterate through the outputs at this state, and update the matches
          --  if any are found.
          for I in Matches'Range loop
-            if Matrix (State, Column (I)).Valid = Valid_Output then
+            if Matrix (State, Column (I)) /= CI_No_State then
                --  Found a match for pattern I at this state
                Start_Pos := Stream_Idx - Patterns (I).Pattern'Length + 1;
                Prev_End  := Get_Prev_Match_End (Matches, I);
@@ -1157,7 +1146,9 @@ package body Aho_Corasick with SPARK_Mode is
       procedure Find_Matches (T        : in out Automaton;
                               Patterns : Pattern_Array;
                               Matches  : in out Match_Array;
-                              Text     : String) with SPARK_Mode is
+                              Text     : String) with SPARK_Mode
+      is
+         pragma Suppress (All_Checks);
       begin
          for C of Text loop
             --  Process the case-sensitive automaton if it exists
