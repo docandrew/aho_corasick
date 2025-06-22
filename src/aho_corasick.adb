@@ -294,7 +294,8 @@ package body Aho_Corasick with SPARK_Mode is
          Matrix     : CS_Matrix;
          From_State : CS_State;
          Char       : Character) return CS_Transition
-         is (Matrix (From_State, Column (Char))) with SPARK_Mode;
+         is (Matrix (From_State, Column_Idx (Character'Pos (Char))))
+      with SPARK_Mode;
 
       -------------------------------------------------------------------------
       --  Get_CI_Character_Transition
@@ -303,7 +304,8 @@ package body Aho_Corasick with SPARK_Mode is
          Matrix     : CI_Matrix;
          From_State : CI_State;
          Char       : Character) return CI_Transition
-         is (Matrix (From_State, Column (Char))) with SPARK_Mode;
+         is (Matrix (From_State, Column_Idx (Character'Pos (Char))))
+      with SPARK_Mode;
 
       -------------------------------------------------------------------------
       --  Get_CS_Failure_Link

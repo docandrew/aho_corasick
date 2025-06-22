@@ -131,8 +131,8 @@ package Aho_Corasick with SPARK_Mode is
       Output_Start_Idx : constant Column_Idx := 257;
 
       --  Row indices for the automaton matrices
-      type CS_State is new Natural range 0 .. CS_Max_States - 1;
-      type CI_State is new Natural range 0 .. CI_Max_States - 1;
+      type CS_State is new Integer range 0 .. CS_Max_States - 1;
+      type CI_State is new Integer range 0 .. CI_Max_States - 1;
 
       CS_Start_State : constant CS_State := 0;
       CI_Start_State : constant CI_State := 0;
@@ -145,12 +145,12 @@ package Aho_Corasick with SPARK_Mode is
       type CS_Transition is record
          Valid      : State_Validity := Uninitialized;
          Next_State : CS_State := CS_Start_State;
-      end record;
+      end record with Pack;
 
       type CI_Transition is record
          Valid      : State_Validity := Uninitialized;
          Next_State : CI_State := CI_Start_State;
-      end record;
+      end record with Pack;
 
       type CS_Matrix is array (CS_State, Column_Idx) of CS_Transition;
       type CI_Matrix is array (CI_State, Column_Idx) of CI_Transition;
