@@ -8,7 +8,7 @@ patterns and the text.
 
 ## Features
 - Mixed-case pattern matching
-- Formally-verified using SPARK (Bronze mode only)
+- Formally-verified using SPARK (Silver mode / no run-time errors)
 - Stream processing support (process text in chunks while maintaining state)
 - Snort/Suricata-like position restrictions (depth/offset/distance/within) for
    limiting matches at certain positions in the text or relative to other
