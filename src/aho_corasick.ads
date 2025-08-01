@@ -145,6 +145,13 @@ package Aho_Corasick with SPARK_Mode is
       type CS_Matrix is array (CS_State, Column_Idx) of CS_State_Extended;
       type CI_Matrix is array (CI_State, Column_Idx) of CI_State_Extended;
 
+      --  Allows the same automaton to be used with multiple text streams.
+      type Stream_State is record
+         CS_Current_State   : CS_State := CS_Start_State;
+         CI_Current_State   : CI_State := CI_Start_State;
+         Stream_Idx : Positive := 1;
+      end record;
+
       -------------------------------------------------------------------------
       --  Automaton
       --  This record holds the state matrices for both case-sensitive and
@@ -167,12 +174,7 @@ package Aho_Corasick with SPARK_Mode is
          Has_CS           : Boolean := False;
          Has_CI           : Boolean := False;
 
-         CS_Current_State : CS_State := CS_Start_State;
-         CI_Current_State : CI_State := CI_Start_State;
-
          Initialized      : Boolean := False;
-
-         Stream_Idx       : Positive := 1;
       end record;
 
       -------------------------------------------------------------------------
@@ -192,11 +194,14 @@ package Aho_Corasick with SPARK_Mode is
       --  text using the Aho-Corasick algorithm across both the Case-sensitive
       --  and case-insensitive automatons.
       --  @param T        The automaton containing the state matrices.
+      --  @param S        The stream state to track the current position in the
+      --   for a given text stream against the automaton.
       --  @param Patterns The patterns to search for.
       --  @param Matches  The array to store the found matches.
       --  @param Text     The input text to search within.
       -------------------------------------------------------------------------
       procedure Find_Matches (T        : in out Automaton;
+                              S        : in out Stream_State;
                               Patterns : Pattern_Array;
                               Matches  : in out Match_Array;
                               Text     : String) with SPARK_Mode,
@@ -206,12 +211,12 @@ package Aho_Corasick with SPARK_Mode is
 
       -------------------------------------------------------------------------
       --  Reset
-      --  This procedure resets the automaton states and indices.
+      --  This procedure resets the stream states and indices.
       --  @note This does not reinitialize the automaton matrices, it only
       --   resets the current state and stream index.
-      --  @param T The automaton to reset.
+      --  @param S The stream state to reset.
       -------------------------------------------------------------------------
-      procedure Reset (T : in out Automaton) with SPARK_Mode;
+      procedure Reset (S : in out Stream_State) with SPARK_Mode;
    end Automatons;
 
 end Aho_Corasick;

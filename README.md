@@ -39,9 +39,10 @@ patterns and the text.
        use Matcher;
 
       T : Automaton := Build_Automaton (Needles);
+      S : Stream_State;
       Haystack : constant String := "abcdefghi";
    begin
-      Find_Matches (T, Needles, Matches, Haystack);
+      Find_Matches (T, S, Needles, Matches, Haystack);
 
       for Match of Matches loop
          if Match.EP /= null then

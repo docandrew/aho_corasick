@@ -883,14 +883,12 @@ package body Aho_Corasick with SPARK_Mode is
                Build_CS_Trie (T.CS_States, Patterns);
                Build_CS_Failure_Links (T.CS_States);
                T.Has_CS := True;
-               T.CS_Current_State := CS_Start_State;
             end if;
 
             if Has_CI_Pattern (Patterns) then
                Build_CI_Trie (T.CI_States, Patterns);
                Build_CI_Failure_Links (T.CI_States);
                T.Has_CI := True;
-               T.CI_Current_State := CI_Start_State;
             end if;
 
             T.Initialized := True;
@@ -1144,6 +1142,7 @@ package body Aho_Corasick with SPARK_Mode is
       --  Find_Matches
       -------------------------------------------------------------------------
       procedure Find_Matches (T        : in out Automaton;
+                              S        : in out Stream_State;
                               Patterns : Pattern_Array;
                               Matches  : in out Match_Array;
                               Text     : String) with SPARK_Mode
@@ -1153,37 +1152,37 @@ package body Aho_Corasick with SPARK_Mode is
          for C of Text loop
             --  Process the case-sensitive automaton if it exists
             if T.Has_CS then
-               T.CS_Current_State := Find_Next_CS_State (
-                  T.CS_States, T.CS_Current_State, C);
+               S.CS_Current_State := Find_Next_CS_State (
+                  T.CS_States, S.CS_Current_State, C);
 
                Check_For_Matches_CS (
-                  T.CS_States, T.CS_Current_State, T.Stream_Idx,
+                  T.CS_States, S.CS_Current_State, S.Stream_Idx,
                   Patterns, Matches);
             end if;
 
             --  Process the case-insensitive automaton if it exists
             if T.Has_CI then
-               T.CI_Current_State := Find_Next_CI_State (
-                  T.CI_States, T.CI_Current_State, To_Lower (C));
+               S.CI_Current_State := Find_Next_CI_State (
+                  T.CI_States, S.CI_Current_State, To_Lower (C));
 
                Check_For_Matches_CI (
-                  T.CI_States, T.CI_Current_State, T.Stream_Idx,
+                  T.CI_States, S.CI_Current_State, S.Stream_Idx,
                   Patterns, Matches);
             end if;
 
             --  Increment the stream index after processing each character
-            T.Stream_Idx := T.Stream_Idx + 1;
+            S.Stream_Idx := S.Stream_Idx + 1;
          end loop;
       end Find_Matches;
 
       -------------------------------------------------------------------------
       --  Reset
       -------------------------------------------------------------------------
-      procedure Reset (T : in out Automaton) with SPARK_Mode is
+      procedure Reset (S : in out Stream_State) with SPARK_Mode is
       begin
-         T.CS_Current_State := CS_Start_State;
-         T.CI_Current_State := CI_Start_State;
-         T.Stream_Idx := 1;
+         S.CS_Current_State := CS_Start_State;
+         S.CI_Current_State := CI_Start_State;
+         S.Stream_Idx := 1;
       end Reset;
 
    end Automatons;

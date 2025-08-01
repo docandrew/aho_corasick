@@ -15,7 +15,7 @@ with Ada.Text_IO;    use Ada.Text_IO;
 with GNAT.Traceback.Symbolic;
 
 procedure Tests is
-   
+
    Success_Count : Natural := 0;
    Total_Tests   : Natural := 0;
 
@@ -63,7 +63,7 @@ procedure Tests is
         [new Enhanced_Pattern'(Pattern => new String'("abc"), others => <>),
          new Enhanced_Pattern'(Pattern => new String'("def"), others => <>),
          new Enhanced_Pattern'(Pattern => new String'("ghi"), others => <>)];
-      
+
       Max_States : constant Natural :=
          Get_Max_States (Patterns, Case_Sensitive);
    begin
@@ -93,11 +93,12 @@ procedure Tests is
       use Matcher;
 
       T : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
       Text     : constant String := "abcdefghi";
    begin
       Put_Line ("=== Testing Basic Pattern Matching ===");
 
-      Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, S, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -129,11 +130,12 @@ procedure Tests is
       use Matcher;
 
       T : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
       Text     : constant String := "abcdefghi";
    begin
       Put_Line ("=== Testing Case-Insensitive Patterns ===");
 
-      Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, S, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -164,11 +166,12 @@ procedure Tests is
       use Matcher;
 
       T : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
       Text     : constant String := "abcdefabc";
    begin
       Put_Line ("=== Testing No Matches ===");
 
-      Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, S, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -198,13 +201,14 @@ procedure Tests is
       use Matcher;
 
       T : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
 
       Text     : constant String := "abcdefabcx";
       Text2    : constant String := "yzabcdefabc";
    begin
       Put_Line ("=== Testing Matches after streaming ===");
 
-      Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, S, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -221,7 +225,7 @@ procedure Tests is
               "No matches found in Basic_Test_3 before streaming");
 
       --  Now find matches in the updated text
-      Find_Matches (T, Patterns, Matches, Text2);
+      Find_Matches (T, S, Patterns, Matches, Text2);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -256,11 +260,12 @@ procedure Tests is
       use Matcher;
 
       T : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
       Text     : constant String := "abcdEfghi";
    begin
       Put_Line ("=== Testing Mixed Case Patterns ===");
 
-      Find_Matches (T, Patterns, Matches, Text);
+      Find_Matches (T, S, Patterns, Matches, Text);
 
       for Match of Matches loop
          if Match.EP /= null then
@@ -325,7 +330,7 @@ procedure Tests is
       use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
-
+      S : Stream_State;
       Start_Time, End_Time : Time;
       AC_Duration : Time_Span;
 
@@ -336,15 +341,15 @@ procedure Tests is
 
       --  Warm up caches
       for I in 1 .. 10 loop
-         A.Reset;
-         Find_Matches (A, Patterns, Matches, Text);
+         S.Reset;
+         Find_Matches (A, S, Patterns, Matches, Text);
       end loop;
 
       --  Time optimized Aho-Corasick
       Start_Time := Clock;
       for I in 1 .. Iterations loop
-         A.Reset;
-         Find_Matches (A, Patterns, Matches, Text);
+         S.Reset;
+         Find_Matches (A, S, Patterns, Matches, Text);
       end loop;
 
       End_Time := Clock;
@@ -354,8 +359,8 @@ procedure Tests is
                 Duration'Image (To_Duration (AC_Duration)) & " seconds");
 
       --  Verify correctness
-      A.Reset;
-      Find_Matches (A, Patterns, Matches, Text);
+      S.Reset;
+      Find_Matches (A, S, Patterns, Matches, Text);
 
       --  Should find all 5 patterns
       Assert (Matches (1).EP.Pattern /= null,
@@ -414,6 +419,7 @@ procedure Tests is
 
       declare
          A : Automaton := Build_Automaton (Pattern_Ptrs);
+         S : Stream_State;
       begin
 
          End_Time := Clock;
@@ -424,7 +430,7 @@ procedure Tests is
 
          --  Test search performance
          Start_Time := Clock;
-         Find_Matches (A, Pattern_Ptrs, Matches, Text);
+         Find_Matches (A, S, Pattern_Ptrs, Matches, Text);
          End_Time := Clock;
 
          Put_Line ("Search with 200 patterns in: " &
@@ -464,6 +470,7 @@ procedure Tests is
       use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
       Matches : Match_Array (Patterns'Range);
 
       --  Various evasion attempts
@@ -478,7 +485,7 @@ procedure Tests is
       Put_Line ("=== Testing Security Evasion Resistance ===");
 
       --  Test each evasion technique
-      Find_Matches (A, Patterns, Matches, Evasion1);
+      Find_Matches (A, S, Patterns, Matches, Evasion1);
 
       Match_Count := 0;
 
@@ -491,9 +498,9 @@ procedure Tests is
          "Evasion resistance - basic script tag detected");
 
       --  Reset for next test
-      A.Reset;
+      S.Reset;
 
-      Find_Matches (A, Patterns, Matches, Evasion2);
+      Find_Matches (A, S, Patterns, Matches, Evasion2);
 
       Match_Count := 0;
 
@@ -505,9 +512,9 @@ procedure Tests is
       Assert (Match_Count >= 1, "Evasion resistance - eval detected");
 
       --  Reset for next test
-      A.Reset;
+      S.Reset;
 
-      Find_Matches (A, Patterns, Matches, Evasion3);
+      Find_Matches (A, S, Patterns, Matches, Evasion3);
 
       Match_Count := 0;
 
@@ -538,6 +545,7 @@ procedure Tests is
       use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
 
       --  Test with various edge cases
       Empty_Text : constant String := "";
@@ -546,18 +554,18 @@ procedure Tests is
 
    begin
       Put_Line ("=== Testing Memory Safety ===");
-      Find_Matches (A, Patterns, Matches, Empty_Text);
+      Find_Matches (A, S, Patterns, Matches, Empty_Text);
       Assert (True, "Memory safety - empty text handled");
 
       --  Single character
-      A.Reset;
-      Find_Matches (A, Patterns, Matches, Single_Char);
+      S.Reset;
+      Find_Matches (A, S, Patterns, Matches, Single_Char);
       Assert (Matches (1).EP.Pattern /= null,
          "Memory safety - single char match");
 
       --  Large text
-      A.Reset;
-      Find_Matches (A, Patterns, Matches, Large_Text);
+      S.Reset;
+      Find_Matches (A, S, Patterns, Matches, Large_Text);
       Assert (True, "Memory safety - large text handled");
    end Test_Memory_Safety;
 
@@ -596,6 +604,7 @@ procedure Tests is
       use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
 
       --  Valid HTTP request structure
       Valid_Text : constant String := "GET /page HTTP/1.1" & ASCII.CR &
@@ -616,7 +625,7 @@ procedure Tests is
       Put_Line ("=== Testing Position Modifiers ===");
 
       --  Test 1: Valid case - should find all patterns
-      Find_Matches (A, Patterns, Matches, Valid_Text);
+      Find_Matches (A, S, Patterns, Matches, Valid_Text);
 
       Put_Line ("Valid case matches:");
       for I in Matches'Range loop
@@ -636,25 +645,25 @@ procedure Tests is
          "Position test - Host found at correct distance");
 
       --  Test 2: GET not at offset 0
-      A.Reset;
+      S.Reset;
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Invalid_Text1);
+      Find_Matches (A, S, Patterns, Matches, Invalid_Text1);
 
       Assert (Matches (1).EP = null,
          "Position test - GET rejected when not at offset 0");
 
       --  Test 3: HTTP too far from GET (violates within constraint)
-      A.Reset;
+      S.Reset;
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Invalid_Text2);
+      Find_Matches (A, S, Patterns, Matches, Invalid_Text2);
 
       Assert (Matches (2).EP = null,
          "Position test - HTTP rejected when too far from GET");
 
       --  Test 4: Host too close to HTTP (violates distance constraint)
-      A.Reset;
+      S.Reset;
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Invalid_Text3);
+      Find_Matches (A, S, Patterns, Matches, Invalid_Text3);
 
       Assert (Matches (3).EP = null,
          "Position test - Host rejected when too close to HTTP");
@@ -692,6 +701,7 @@ procedure Tests is
       use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
 
       --  Split across streaming chunks
       Chunk1 : constant String := "START data here ";
@@ -707,7 +717,7 @@ procedure Tests is
       Matches := [others => Empty_Match];
 
       --  Process chunks sequentially
-      Find_Matches (A, Patterns, Matches, Chunk1);
+      Find_Matches (A, S, Patterns, Matches, Chunk1);
       Put_Line ("After chunk 1:");
       for I in Matches'Range loop
          if Matches (I).EP /= null then
@@ -716,7 +726,7 @@ procedure Tests is
          end if;
       end loop;
 
-      Find_Matches (A, Patterns, Matches, Chunk2);
+      Find_Matches (A, S, Patterns, Matches, Chunk2);
       Put_Line ("After chunk 2:");
       for I in Matches'Range loop
          if Matches (I).EP /= null then
@@ -725,7 +735,7 @@ procedure Tests is
          end if;
       end loop;
 
-      Find_Matches (A, Patterns, Matches, Chunk3);
+      Find_Matches (A, S, Patterns, Matches, Chunk3);
       Put_Line ("After chunk 3:");
       for I in Matches'Range loop
          if Matches (I).EP /= null then
@@ -784,6 +794,7 @@ procedure Tests is
       use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
 
       --  Valid SQL injection attempt
       Attack_Text : constant String :=
@@ -804,7 +815,7 @@ procedure Tests is
 
       --  Test 1: Should detect attack
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Attack_Text);
+      Find_Matches (A, S, Patterns, Matches, Attack_Text);
 
       Put_Line ("Attack text matches:");
       for I in Matches'Range loop
@@ -824,17 +835,17 @@ procedure Tests is
          "SQL injection - users detected in sequence");
 
       --  Test 2: Should not detect when SELECT not at start
-      A.Reset;
+      S.Reset;
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Benign_Text1);
+      Find_Matches (A, S, Patterns, Matches, Benign_Text1);
 
       Assert (Matches (1).EP = null,
          "SQL injection - SELECT rejected when not at start");
 
       --  Test 3: Should break sequence when patterns out of order
-      A.Reset;
+      S.Reset;
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Benign_Text2);
+      Find_Matches (A, S, Patterns, Matches, Benign_Text2);
 
       --  Should find SELECT, but not * and FROM in the right position
       Assert (Matches (1).EP /= null,
@@ -870,6 +881,7 @@ procedure Tests is
       use Matcher;
 
       A : Automaton := Build_Automaton (Patterns);
+      S : Stream_State;
 
       --  Edge case: patterns adjacent
       Adjacent_Text : constant String := "AB";
@@ -884,19 +896,195 @@ procedure Tests is
 
       --  Test 1: Adjacent patterns with distance 0
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Adjacent_Text);
+      Find_Matches (A, S, Patterns, Matches, Adjacent_Text);
 
       Assert (Matches (1).EP /= null, "Edge case - A found");
       Assert (Matches (2).EP /= null, "Edge case - B found at distance 0");
 
       --  Test 2: Exact boundary case
-      A.Reset;
+      S.Reset;
       Matches := [others => Empty_Match];
-      Find_Matches (A, Patterns, Matches, Boundary_Text);
+      Find_Matches (A, S, Patterns, Matches, Boundary_Text);
 
       Assert (Matches (1).EP /= null, "Edge case - A found in boundary test");
       Assert (Matches (2).EP /= null, "Edge case - B found at exact boundary");
    end Test_Position_Modifiers_Edge_Cases;
+
+   ----------------------------------------------------------------------------
+   --  Test_Multiple_Stream_States
+   --  Test using multiple Stream_States with different haystacks searching
+   --  for the same patterns (needles)
+   ----------------------------------------------------------------------------
+   procedure Test_Multiple_Stream_States is
+      --  Common patterns (needles) to search for
+      Pattern1 : aliased constant String := "ERROR";
+      Pattern2 : aliased constant String := "WARNING";
+      Pattern3 : aliased constant String := "INFO";
+
+      Patterns : constant Pattern_Array :=
+         [new Enhanced_Pattern'(
+            Pattern => Pattern1'Unchecked_Access,
+            Nocase  => Case_Sensitive,
+            others => <>),
+          new Enhanced_Pattern'(
+            Pattern => Pattern2'Unchecked_Access,
+            Nocase  => Case_Sensitive,
+            others => <>),
+          new Enhanced_Pattern'(
+            Pattern => Pattern3'Unchecked_Access,
+            Nocase  => Case_Sensitive,
+            others => <>)
+         ];
+
+      package Matcher is new Aho_Corasick.Automatons (Patterns);
+      use Matcher;
+
+      A : Automaton := Build_Automaton (Patterns);
+
+      --  Multiple independent stream states
+      S1, S2, S3 : Stream_State;
+      
+      --  Match arrays for each stream
+      Matches1, Matches2, Matches3 : Match_Array (Patterns'Range);
+
+      --  Different haystacks (log streams from different sources)
+      Haystack1 : constant String := "2025-08-01 10:15:23 ERROR: Database connection failed";
+      Haystack2 : constant String := "2025-08-01 10:15:24 WARNING: High memory usage detected";
+      Haystack3 : constant String := "2025-08-01 10:15:25 INFO: User login successful";
+
+      --  Additional chunks for streaming test
+      Haystack1_Chunk2 : constant String := " - retrying connection";
+      Haystack2_Chunk2 : constant String := " - garbage collection initiated";
+      Haystack3_Chunk2 : constant String := " - session established";
+
+      --  Text containing multiple patterns
+      Mixed_Text : constant String := "ERROR and WARNING and INFO all present";
+
+      Empty_Match : constant Match := (EP => null,
+         Start_Position => No_Value, End_Position => No_Value);
+
+      --  Helper to count matches
+      function Count_Matches (Matches : Match_Array) return Natural is
+         Count : Natural := 0;
+      begin
+         for Match of Matches loop
+            if Match.EP /= null then
+               Count := Count + 1;
+            end if;
+         end loop;
+         return Count;
+      end Count_Matches;
+
+   begin
+      Put_Line ("=== Testing Multiple Stream States ===");
+
+      --  Initialize all match arrays
+      Matches1 := [others => Empty_Match];
+      Matches2 := [others => Empty_Match];
+      Matches3 := [others => Empty_Match];
+
+      --  Process first chunks in parallel streams
+      Put_Line ("Processing first chunks for each stream:");
+
+      Find_Matches (A, S1, Patterns, Matches1, Haystack1);
+      Put_Line ("Stream 1 (ERROR log): " & Count_Matches (Matches1)'Image & " matches");
+      for I in Matches1'Range loop
+         if Matches1 (I).EP /= null then
+            Put_Line ("  Found: " & Matches1 (I).EP.Pattern.all &
+                     " at position " & Matches1 (I).Start_Position'Image);
+         end if;
+      end loop;
+
+      Find_Matches (A, S2, Patterns, Matches2, Haystack2);
+      Put_Line ("Stream 2 (WARNING log): " & Count_Matches (Matches2)'Image & " matches");
+      for I in Matches2'Range loop
+         if Matches2 (I).EP /= null then
+            Put_Line ("  Found: " & Matches2 (I).EP.Pattern.all &
+                     " at position " & Matches2 (I).Start_Position'Image);
+         end if;
+      end loop;
+
+      Find_Matches (A, S3, Patterns, Matches3, Haystack3);
+      Put_Line ("Stream 3 (INFO log): " & Count_Matches (Matches3)'Image & " matches");
+      for I in Matches3'Range loop
+         if Matches3 (I).EP /= null then
+            Put_Line ("  Found: " & Matches3 (I).EP.Pattern.all &
+                     " at position " & Matches3 (I).Start_Position'Image);
+         end if;
+      end loop;
+
+      --  Verify each stream found its expected pattern
+      Assert (Matches1 (1).EP /= null and then Matches1 (1).EP.Pattern.all = "ERROR",
+         "Multiple streams - Stream 1 found ERROR");
+      Assert (Matches2 (2).EP /= null and then Matches2 (2).EP.Pattern.all = "WARNING",
+         "Multiple streams - Stream 2 found WARNING");
+      Assert (Matches3 (3).EP /= null and then Matches3 (3).EP.Pattern.all = "INFO",
+         "Multiple streams - Stream 3 found INFO");
+
+      --  Verify streams are independent (no cross-contamination)
+      Assert (Matches1 (2).EP = null and Matches1 (3).EP = null,
+         "Multiple streams - Stream 1 independent (no WARNING/INFO)");
+      Assert (Matches2 (1).EP = null and Matches2 (3).EP = null,
+         "Multiple streams - Stream 2 independent (no ERROR/INFO)");
+      Assert (Matches3 (1).EP = null and Matches3 (2).EP = null,
+         "Multiple streams - Stream 3 independent (no ERROR/WARNING)");
+
+      Put_Line ("Processing second chunks for each stream:");
+
+      --  Process second chunks to test streaming continuity
+      --  Reset match arrays but keep stream states
+      Matches1 := [others => Empty_Match];
+      Matches2 := [others => Empty_Match];
+      Matches3 := [others => Empty_Match];
+
+      Find_Matches (A, S1, Patterns, Matches1, Haystack1_Chunk2);
+      Find_Matches (A, S2, Patterns, Matches2, Haystack2_Chunk2);
+      Find_Matches (A, S3, Patterns, Matches3, Haystack3_Chunk2);
+
+      --  Second chunks shouldn't contain our target patterns
+      Assert (Count_Matches (Matches1) = 0,
+         "Multiple streams - Stream 1 second chunk has no matches");
+      Assert (Count_Matches (Matches2) = 0,
+         "Multiple streams - Stream 2 second chunk has no matches");
+      Assert (Count_Matches (Matches3) = 0,
+         "Multiple streams - Stream 3 second chunk has no matches");
+
+      Put_Line ("Testing cross-stream pattern detection:");
+
+      --  Reset all streams and test with mixed content
+      S1.Reset;
+      S2.Reset;
+      S3.Reset;
+
+      Matches1 := [others => Empty_Match];
+      Matches2 := [others => Empty_Match];
+      Matches3 := [others => Empty_Match];
+
+      Find_Matches (A, S1, Patterns, Matches1, Mixed_Text);
+      Find_Matches (A, S2, Patterns, Matches2, Mixed_Text);
+      Find_Matches (A, S3, Patterns, Matches3, Mixed_Text);
+
+      --  All streams should find all three patterns when processing the same text
+      Assert (Count_Matches (Matches1) = 3,
+         "Multiple streams - Stream 1 found all 3 patterns in mixed text");
+      Assert (Count_Matches (Matches2) = 3,
+         "Multiple streams - Stream 2 found all 3 patterns in mixed text");
+      Assert (Count_Matches (Matches3) = 3,
+         "Multiple streams - Stream 3 found all 3 patterns in mixed text");
+
+      --  Verify each stream's results are identical
+      for I in Patterns'Range loop
+         Assert (Matches1 (I).EP /= null and then
+                Matches2 (I).EP /= null and then
+                Matches3 (I).EP /= null and then
+                Matches1 (I).EP.Pattern.all = Matches2 (I).EP.Pattern.all and then
+                Matches2 (I).EP.Pattern.all = Matches3 (I).EP.Pattern.all,
+         "Multiple streams - All streams have identical results for pattern " & I'Image);
+      end loop;
+
+      Put_Line ("Multiple stream states test completed successfully!");
+
+   end Test_Multiple_Stream_States;
 
 begin
 
@@ -915,6 +1103,7 @@ begin
    Test_Position_Modifiers_Streaming;
    Test_Position_Modifiers_SQL_Injection;
    Test_Position_Modifiers_Edge_Cases;
+   Test_Multiple_Stream_States;
 
    Put_Line ("Pass:" & Success_Count'Image & " / Total:" & Total_Tests'Image);
    if Success_Count = Total_Tests then
